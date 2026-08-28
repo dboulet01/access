@@ -16,9 +16,9 @@ setup(
     ],
     install_requires=["setuptools"],
     zip_safe=True,
-    maintainer="Secure Docking Team",
+    maintainer="Project Maintainers",
     maintainer_email="maintainer@example.com",
-    description="Simulation orchestration and baseline docking controller.",
+    description="Spacecraft authorization docking reference orchestration.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [

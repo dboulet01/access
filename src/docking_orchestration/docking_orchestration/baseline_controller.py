@@ -55,7 +55,8 @@ class BaselineController(Node):
         self._pending_x = None
         self._reset_requested = False
         self._reset_pose_pending = False
-        self._halted = False
+        self._start_after_reset = False
+        self._halted = True
         initial_delay_s = self.get_parameter("initial_delay_s").value
         self._resume_time = (
             self.get_clock().now()
@@ -74,18 +75,27 @@ class BaselineController(Node):
             TransitionDecision, "/docking/transition_decision", self._on_decision, 10
         )
         self.create_subscription(Empty, "/docking/reset", self._on_reset, 10)
+        self.create_subscription(Empty, "/docking/prepare", self._on_prepare, 10)
         self._pose_client = self.create_client(
             SetEntityPose, "/world/docking/set_pose"
         )
         self.create_timer(1.0 / self._rate, self._update)
 
     def _on_reset(self, _message):
+        self._request_reset(start_after_reset=True)
+        self.get_logger().info("simulation start requested")
+
+    def _on_prepare(self, _message):
+        self._request_reset(start_after_reset=False)
+        self.get_logger().info("simulation prepared at HOLD")
+
+    def _request_reset(self, start_after_reset):
         self._reset_requested = True
-        self._halted = False
+        self._start_after_reset = start_after_reset
+        self._halted = not start_after_reset
         self._pending = False
         self._request_time = None
         self._resume_time = None
-        self.get_logger().info("simulation reset requested")
 
     def _on_decision(self, decision):
         if not self._pending:
@@ -132,10 +142,13 @@ class BaselineController(Node):
                     self._x = self._pending_x
                     if self._reset_pose_pending:
                         self._state = DockingStatus.HOLD
-                        self._resume_time = (
-                            self.get_clock().now()
-                            + rclpy.duration.Duration(seconds=self._restart_delay_s)
-                        )
+                        if self._start_after_reset:
+                            self._resume_time = (
+                                self.get_clock().now()
+                                + rclpy.duration.Duration(seconds=self._restart_delay_s)
+                            )
+                        else:
+                            self._resume_time = None
                 else:
                     self.get_logger().error("Gazebo rejected chaser pose request")
                     if self._reset_pose_pending:

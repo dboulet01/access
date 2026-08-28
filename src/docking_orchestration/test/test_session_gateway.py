@@ -38,6 +38,12 @@ class SessionPoolTests(unittest.TestCase):
         self.assertEqual(backend, "one:8080")
         self.assertTrue(created)
 
+    def test_status_excludes_expired_sessions(self):
+        pool = SessionPool(["one:8080"], idle_timeout_s=-1)
+        pool.acquire()
+
+        self.assertEqual(pool.status()["active_sessions"], 0)
+
     def test_releases_failed_assignment(self):
         pool = SessionPool(["one:8080"])
         session_id, _, _ = pool.acquire()

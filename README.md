@@ -1,14 +1,82 @@
-# Secure Docking Simulation
+# Spacecraft Interaction Authorization
 
-Modular ROS 2 and Gazebo environment for rendezvous, proximity operations,
-docking, and berthing with cryptographically enforced transition authority.
+Open, portable, fail-closed authorization for safety-critical interactions
+between spacecraft, stations, servicing vehicles, and robotic systems.
 
-## Working baseline
+The authorization protocol, security kernel, integration contracts, and
+conformance evidence are the product. The ROS 2 and Gazebo simulation in this
+repository is a reference environment that demonstrates and tests those
+capabilities; it is not a dependency of the security model.
 
-The repository now has two validated vertical slices:
+See [docs/project-principles.md](docs/project-principles.md) for the project's
+mission, product boundary, open-source commitment, and commercialization model.
 
-1. A containerized ROS 2 Humble and Gazebo Fortress docking simulation.
-2. `docking_identity_core`, a physics-independent Rust security crate.
+## The outcome
+
+The system answers one operational question:
+
+> May this independently operated vehicle perform this safety-critical action,
+> here, now, under these constraints?
+
+Verified identity, operator policy, encounter state, and local safety evidence
+produce an auditable decision. Allowed actions receive short-lived, narrowly
+scoped, replay-resistant entitlements enforced at the protected transition or
+actuation boundary. Missing, stale, revoked, replayed, or unverifiable authority
+fails closed according to mission policy.
+
+The first reference use case is visiting-vehicle progression through rendezvous,
+proximity operations, and docking. The intended product surface also supports
+servicing, refueling, capture, assembly, resource access, and other autonomous
+interactions between independently operated systems.
+
+See [docs/positioning.md](docs/positioning.md) for the problem, intended adopters,
+and category framing.
+
+## Product layers
+
+1. **Open protocol:** identity, session, authority, revocation, and failure
+	semantics.
+2. **Portable kernel:** deterministic, simulator-independent authorization and
+	state reduction.
+3. **Integration contracts:** stable Rust and C interfaces plus adapters for
+	flight, robotics, and simulation frameworks.
+4. **Conformance evidence:** schemas, test vectors, negative tests, threat
+	models, and reproducible builds.
+
+## Strategic assets
+
+The project measures progress by accumulating four assets:
+
+1. **Technical maturity:** portable kernel, stable protocol, adapters, fuzzing,
+	and formal analysis.
+2. **Operational credibility:** realistic servicing, station-access, refueling,
+	and degraded-link scenarios.
+3. **Integration credibility:** cFS, F Prime, Space ROS, DDS, and C interfaces.
+4. **Institutional credibility:** public governance, external contributors,
+	design partners, publications, and standards participation.
+
+The simulation belongs to operational credibility. It is a showcase and
+executable evidence environment for realistic interactions, policy decisions,
+failure modes, and protected outcomes. Simulation features are valuable when
+they make a capability or operational claim concrete; they are not an
+independent product objective.
+
+See [docs/roadmap.md](docs/roadmap.md) for the path from the current executable
+reference model to interoperable and assurance-focused releases.
+
+## Current maturity
+
+The repository currently has two implemented slices:
+
+1. `docking_identity_core`, a physics-independent Rust security crate.
+2. A containerized ROS 2 Humble and Gazebo Fortress reference environment.
+
+The Rust core is not yet connected as the live ROS transition authority, and the
+project is not flight-qualified. The current development/mock authority makes
+the intended enforcement boundary executable while the production adapter is
+built.
+
+## Docking reference environment
 
 The simulation provides:
 
@@ -20,11 +88,18 @@ The simulation provides:
 - ROS status, transition-request, and transition-decision topics
 - a headless end-to-end smoke test
 
-Build and run the continuous baseline:
+Build and start the baseline in idle `HOLD`:
 
 ```powershell
 docker compose build docking-sim
 docker compose up docking-sim
+```
+
+The simulation does not begin automatically. Trigger a run explicitly from
+another terminal:
+
+```powershell
+docker compose exec docking-sim ros2 topic pub --once /docking/reset std_msgs/msg/Empty "{}"
 ```
 
 In another terminal, inspect its state:
@@ -64,7 +139,7 @@ Run the self-terminating smoke test:
 The expected terminal state is `HARD_DOCK_REACHED`. The test advances simulated
 range only after Gazebo acknowledges each pose update.
 
-## Browser visualization
+### Browser visualization
 
 Start the three-session visual simulation pool and gateway:
 
@@ -72,19 +147,27 @@ Start the three-session visual simulation pool and gateway:
 docker compose up --build docking-gateway
 ```
 
-Open [http://localhost:8080](http://localhost:8080). The launch waits eight
-seconds before motion and uses a slower approach speed so the sequence is easy
-to follow. The display is driven by live ROS status, request, and decision
+Open [http://localhost:8080](http://localhost:8080). Each assigned simulation
+remains idle at `HOLD` until **Start simulation** is selected. It then waits
+briefly at `HOLD` and uses a slower approach speed so the sequence is easy to
+follow. The display is driven by live ROS status, request, and decision
 topics from the same Gazebo-backed process used by the headless test.
 Each browser receives an HTTP-only session cookie and is pinned to one of three
 visual services. Each service has its own ROS domain and Gazebo partition, so
 three people can run different profiles concurrently without sharing state or
-transition decisions. A fourth new session receives HTTP `503` until a
-30-minute idle lease expires or the gateway is restarted.
+transition decisions. A fourth new session receives HTTP `503` until an
+existing browser closes or its abandoned lease expires after 60 seconds.
 
-Select **Rerun simulation** in the dashboard to reset the chaser and development
-gate. The display remains in `RESETTING` until Gazebo confirms the initial pose,
-shows a three-second `HOLD`, and then starts a new docking sequence.
+Select **Start simulation** in the dashboard to reset the chaser and development
+gate and begin the selected profile. Opening or refreshing the dashboard never
+starts a run. The display remains in `RESETTING` until Gazebo confirms the
+initial pose, shows a brief `HOLD`, and then starts the docking sequence.
+
+You can also start a visual slot directly from the command line:
+
+```powershell
+docker compose exec docking-visual-1 ros2 topic pub --once /docking/reset std_msgs/msg/Empty "{}"
+```
 
 You can recreate the complete visual pool from the command line:
 
@@ -143,7 +226,7 @@ See [docs/commercial-refueling-scenario.md](docs/commercial-refueling-scenario.m
 for a complete practical run from organization onboarding through credential
 proof, docking entitlements, servicing authorization, and audit.
 
-## GPU override
+### GPU override
 
 The current headless smoke test does not require a GPU. For future camera,
 lidar, and GUI rendering workloads on an NVIDIA Docker host, apply the override:
@@ -152,7 +235,7 @@ lidar, and GUI rendering workloads on an NVIDIA Docker host, apply the override:
 docker compose -f compose.yaml -f compose.gpu.yaml up docking-sim
 ```
 
-## Current fidelity
+### Reference fidelity
 
 This baseline deliberately uses deterministic kinematic motion through Gazebo's
 `SetEntityPose` service. It validates world loading, ROS/Gazebo transport,

@@ -3,7 +3,7 @@
   <name>docking_description</name>
   <version>0.1.0</version>
   <description>Spacecraft and docking interface descriptions.</description>
-  <maintainer email="maintainer@example.com">Secure Docking Team</maintainer>
+  <maintainer email="maintainer@example.com">Project Maintainers</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

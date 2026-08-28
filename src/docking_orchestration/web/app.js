@@ -343,11 +343,14 @@ async function rerun() {
     stateNode.textContent = "RESET FAILED";
   } finally {
     rerunButton.disabled = false;
-    rerunButton.textContent = "Rerun simulation";
+    rerunButton.textContent = "Start simulation";
   }
 }
 
 setInterval(refresh, 150);
+window.addEventListener("pagehide", () => {
+  navigator.sendBeacon("/gateway/release");
+});
 rerunButton.addEventListener("click", rerun);
 bindCraftConfig(chaser, chaserConfig);
 bindCraftConfig(target, targetConfig);

@@ -17,6 +17,7 @@ class DevelopmentGate(Node):
             TransitionRequest, "/docking/transition_request", self._on_request, 10
         )
         self.create_subscription(Empty, "/docking/reset", self._on_reset, 10)
+        self.create_subscription(Empty, "/docking/prepare", self._on_reset, 10)
 
     def _on_reset(self, _message):
         self._state = DockingStatus.HOLD

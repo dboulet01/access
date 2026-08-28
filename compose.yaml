@@ -64,7 +64,7 @@ services:
       - session_gateway
     environment:
       GATEWAY_PORT: "8080"
-      SESSION_IDLE_TIMEOUT_S: "1800"
+      SESSION_IDLE_TIMEOUT_S: "60"
       SIMULATION_BACKENDS: docking-visual-1:8080,docking-visual-2:8080,docking-visual-3:8080
     depends_on:
       - docking-visual-1

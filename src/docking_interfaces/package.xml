@@ -2,8 +2,8 @@
 <package format="3">
   <name>docking_interfaces</name>
   <version>0.1.0</version>
-  <description>Backend-neutral interfaces for docking simulation and authorization.</description>
-  <maintainer email="maintainer@example.com">Secure Docking Team</maintainer>
+  <description>Backend-neutral interfaces for the docking reference environment.</description>
+  <maintainer email="maintainer@example.com">Project Maintainers</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>

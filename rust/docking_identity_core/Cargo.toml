@@ -1,6 +1,6 @@
 [package]
 name = "docking_identity_core"
-description = "Physics-independent identity and authorization core for spacecraft docking"
+description = "Portable authorization core for safety-critical spacecraft interactions"
 edition.workspace = true
 license.workspace = true
 version.workspace = true

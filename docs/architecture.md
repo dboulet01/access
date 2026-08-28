@@ -1,4 +1,36 @@
-# Hybrid Architecture
+# Spacecraft Interaction Authorization Architecture
+
+This architecture implements the product boundary established in
+[project-principles.md](project-principles.md): the portable authorization
+protocol and kernel are the product, while ROS 2, Gazebo, Python orchestration,
+and the dashboard form a replaceable operational-credibility environment. That
+environment showcases product capabilities and produces executable evidence; it
+does not define the product architecture.
+
+## Product architecture
+
+```mermaid
+flowchart LR
+    PEER[Independent peer] --> TRANSPORT[Existing secure transport]
+    TRANSPORT --> ADAPTER[Platform adapter]
+    ADAPTER --> CORE[Portable authorization kernel]
+    POLICY[Operator policy] --> CORE
+    SAFETY[Local safety evidence] --> CORE
+    CORE --> GATE[Protected transition gate]
+    GNC[Mission GNC] --> GATE
+    GATE --> ACT[Actuation or resource access]
+    CORE --> AUDIT[Auditable decision evidence]
+```
+
+Secure transport protects message delivery. The authorization kernel determines
+whether the authenticated peer has current, scoped authority for the requested
+interaction. Mission GNC retains responsibility for determining whether motion
+is physically safe; authorization cannot override failed local safety evidence.
+
+The portable boundary includes protocol claims, policy evaluation, replay state,
+entitlement issuance and consumption, and deterministic failure behavior. ROS 2,
+DDS, cFS, F Prime, network transports, key stores, clocks, dynamics, and
+actuators connect through adapters.
 
 ## Ownership rule
 

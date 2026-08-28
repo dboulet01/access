@@ -32,8 +32,8 @@ class DashboardState:
     def __init__(self):
         self.lock = threading.Lock()
         self.snapshot = {
-            "state": "STARTING",
-            "state_id": -1,
+            "state": "HOLD",
+            "state_id": int(DockingStatus.HOLD),
             "range_m": 3.32,
             "transition_pending": False,
             "events": [],
@@ -46,13 +46,14 @@ class DashboardState:
                 "session_id": "pending",
                 "policy_id": "commercial-docking-v3",
                 "trust_bundle": "waystation-1-trust@42",
-                "phase": "STARTING",
+                "phase": "IDLE",
                 "completed_steps": [],
                 "events": [],
                 "entitlements": [],
             },
         }
         self.rerun_requested = threading.Event()
+        self.prepare_requested = threading.Event()
         self.requested_scenario = "nominal"
 
     def update_status(self, status):
@@ -89,6 +90,17 @@ class DashboardState:
             )
         self.rerun_requested.set()
 
+    def request_prepare(self):
+        with self.lock:
+            self.snapshot.update(
+                state="HOLD",
+                state_id=int(DockingStatus.HOLD),
+                range_m=3.32,
+                transition_pending=False,
+                events=[],
+            )
+        self.prepare_requested.set()
+
 
 def handler_for(web_root, state):
     class DashboardHandler(SimpleHTTPRequestHandler):
@@ -108,6 +120,15 @@ def handler_for(web_root, state):
             super().do_GET()
 
         def do_POST(self):
+            if self.path == "/api/prepare":
+                state.request_prepare()
+                payload = json.dumps({"accepted": True}).encode()
+                self.send_response(202)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
             if self.path != "/api/rerun":
                 self.send_error(404)
                 return
@@ -159,6 +180,7 @@ class VisualDashboard(Node):
             authorization_qos,
         )
         self._reset_publisher = self.create_publisher(Empty, "/docking/reset", 10)
+        self._prepare_publisher = self.create_publisher(Empty, "/docking/prepare", 10)
         self._scenario_publisher = self.create_publisher(
             String, "/authorization/scenario", 10
         )
@@ -174,6 +196,10 @@ class VisualDashboard(Node):
         self.get_logger().info(f"visual dashboard ready on http://localhost:{port}")
 
     def _publish_requested_reset(self):
+        if self._state.prepare_requested.is_set():
+            self._state.prepare_requested.clear()
+            self._prepare_publisher.publish(Empty())
+            self.get_logger().info("published simulation prepare command")
         if not self._state.rerun_requested.is_set():
             return
         self._state.rerun_requested.clear()

@@ -22,20 +22,23 @@ HOP_BY_HOP_HEADERS = {
 
 
 class SessionPool:
-    def __init__(self, backends, idle_timeout_s=1800):
+    def __init__(self, backends, idle_timeout_s=60):
         self.backends = backends
         self.idle_timeout_s = idle_timeout_s
         self.lock = threading.Lock()
         self.leases = {}
 
+    def _expire(self, now):
+        self.leases = {
+            key: value
+            for key, value in self.leases.items()
+            if now - value[1] < self.idle_timeout_s
+        }
+
     def acquire(self, session_id=None):
         now = time.monotonic()
         with self.lock:
-            self.leases = {
-                key: value
-                for key, value in self.leases.items()
-                if now - value[1] < self.idle_timeout_s
-            }
+            self._expire(now)
             if session_id in self.leases:
                 backend, _ = self.leases[session_id]
                 self.leases[session_id] = (backend, now)
@@ -54,6 +57,7 @@ class SessionPool:
 
     def status(self):
         with self.lock:
+            self._expire(time.monotonic())
             active = len(self.leases)
         return {"capacity": len(self.backends), "active_sessions": active}
 
@@ -73,6 +77,12 @@ def handler_for(pool):
             self._proxy()
 
         def do_POST(self):
+            if self.path == "/gateway/release":
+                session_id = self._session_id()
+                if session_id:
+                    pool.release(session_id)
+                self._json_response(200, {"released": bool(session_id)})
+                return
             self._proxy()
 
         def _session_id(self):
@@ -92,7 +102,7 @@ def handler_for(pool):
                         {"error": "All simulation sessions are in use", **pool.status()},
                     )
                     return
-                if created and not self._reset_backend(backend):
+                if created and not self._prepare_backend(backend):
                     pool.release(session_id)
                     self._json_response(502, {"error": "Simulation session is starting"})
                     return
@@ -141,15 +151,14 @@ def handler_for(pool):
             self.end_headers()
             self.wfile.write(payload)
 
-        def _reset_backend(self, backend):
+        def _prepare_backend(self, backend):
             host, port = backend.rsplit(":", 1)
-            payload = json.dumps({"scenario": "nominal"})
             connection = http.client.HTTPConnection(host, int(port), timeout=10)
             try:
                 connection.request(
                     "POST",
-                    "/api/rerun",
-                    payload,
+                    "/api/prepare",
+                    b"{}",
                     {"Content-Type": "application/json"},
                 )
                 response = connection.getresponse()
@@ -184,7 +193,7 @@ def main():
         ).split(",")
         if value.strip()
     ]
-    idle_timeout_s = int(os.environ.get("SESSION_IDLE_TIMEOUT_S", "1800"))
+    idle_timeout_s = int(os.environ.get("SESSION_IDLE_TIMEOUT_S", "60"))
     port = int(os.environ.get("GATEWAY_PORT", "8080"))
     pool = SessionPool(backends, idle_timeout_s)
     server = ThreadingHTTPServer(("0.0.0.0", port), handler_for(pool))

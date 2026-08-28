@@ -129,7 +129,8 @@ class MockAuthorization(Node):
     def __init__(self):
         super().__init__("mock_authorization")
         self._state = DockingStatus.HOLD
-        self._started_at = self.get_clock().now()
+        self._started_at = None
+        self._running = False
         self._published_steps = 0
         self._events = []
         self._entitlements = []
@@ -152,13 +153,17 @@ class MockAuthorization(Node):
             TransitionRequest, "/docking/transition_request", self._on_request, 10
         )
         self.create_subscription(Empty, "/docking/reset", self._on_reset, 10)
+        self.create_subscription(Empty, "/docking/prepare", self._on_prepare, 10)
         self.create_subscription(
             String, "/authorization/scenario", self._on_scenario, 10
         )
         self.create_timer(0.1, self._advance_onboarding)
+        self._publish_status()
         self.get_logger().info("mock policy authority started for commercial refueling demo")
 
     def _advance_onboarding(self):
+        if not self._running:
+            return
         elapsed = (self.get_clock().now() - self._started_at).nanoseconds / 1e9
         while (
             self._published_steps < len(ONBOARDING_STEPS)
@@ -292,8 +297,17 @@ class MockAuthorization(Node):
         self.get_logger().info(f"{action}: {reason_code}")
 
     def _on_reset(self, _message):
+        self._reset(start=True)
+        self.get_logger().info("mock authorization workflow started")
+
+    def _on_prepare(self, _message):
+        self._reset(start=False)
+        self.get_logger().info("mock authorization workflow prepared")
+
+    def _reset(self, start):
         self._state = DockingStatus.HOLD
-        self._started_at = self.get_clock().now()
+        self._started_at = self.get_clock().now() if start else None
+        self._running = start
         self._published_steps = 0
         self._events = []
         self._entitlements = []
@@ -301,7 +315,6 @@ class MockAuthorization(Node):
         self._pending_request = None
         self._decision_due_at = None
         self._publish_status()
-        self.get_logger().info("mock authorization workflow reset")
 
     def _on_scenario(self, message):
         if message.data not in SCENARIOS:
@@ -323,9 +336,13 @@ class MockAuthorization(Node):
             "session_id": "session:dock-2026-1842",
             "policy_id": "commercial-docking-v3",
             "trust_bundle": "waystation-1-trust@42",
-            "phase": ONBOARDING_STEPS[self._published_steps - 1][1]
-            if self._published_steps
-            else "STARTING",
+            "phase": (
+                ONBOARDING_STEPS[self._published_steps - 1][1]
+                if self._published_steps
+                else "STARTING"
+            )
+            if self._running
+            else "IDLE",
             "completed_steps": completed_codes,
             "events": self._events[-32:],
             "entitlements": self._entitlements[-6:],

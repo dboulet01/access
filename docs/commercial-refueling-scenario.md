@@ -1,4 +1,4 @@
-# End-to-End Commercial Refueling Scenario
+# Commercial Refueling Reference Scenario
 
 ## Scenario
 
@@ -240,7 +240,7 @@ idle lease. The dashboard displays:
 - in-scene protocol callouts and a post-run flight recorder synchronized to
   mission state, range, authorization checkpoints, and exchanged messages
 
-Choose a deterministic **Run profile**, then select **Rerun simulation** to
+Choose a deterministic **Run profile**, then select **Start simulation** to
 reset the chaser, policy authority, session workflow, entitlements, and audit
 view. The flight recorder becomes available after either successful hard dock
 or a deterministic authorization denial, without changing live backend state.
