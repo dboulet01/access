@@ -1,0 +1,3 @@
+uint8 requested_state
+string requester
+string reason

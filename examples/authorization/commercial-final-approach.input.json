@@ -1,0 +1,88 @@
+{
+  "protocol_version": "1.0",
+  "evaluation_id": "eval-2026-1842-final",
+  "evaluated_at": "2026-08-27T23:30:00Z",
+  "policy": {
+    "bundle_id": "waystation-1-trust",
+    "bundle_version": 42,
+    "policy_id": "commercial-docking-v3",
+    "policy_hash": "sha-384:cG9saWN5LWRpZ2VzdA"
+  },
+  "request": {
+    "request_id": "req-final-001",
+    "action": "enter_final_approach",
+    "previous_stage": "approach",
+    "requested_stage": "final_approach",
+    "station_id": "station:waystation-1",
+    "port_id": "port-3",
+    "mission_id": "mission:ll-2026-1842",
+    "nonce": "cmVxdWVzdC1ub25jZS0wMDE",
+    "requested_constraints": {
+      "max_closing_rate_mps": 0.2,
+      "max_range_m": 1.12
+    }
+  },
+  "subject": {
+    "vehicle_id": "did:web:lunar-logistics.example:spacecraft:odyssey-7",
+    "operator_id": "did:web:lunar-logistics.example",
+    "encounter_id": "did:peer:2.EzOdysseyEncounter",
+    "controller_id": "controller:odyssey-7:gnc-primary"
+  },
+  "issuer_trust": [
+    {
+      "issuer_id": "did:web:orbital-safety.example",
+      "did_method": "did:web",
+      "credential_types": ["DockingCertificationCredential"],
+      "status": "trusted",
+      "key_state_hash": "sha-384:aXNzdWVyLWtleS1zdGF0ZQ"
+    }
+  ],
+  "credentials": [
+    {
+      "credential_id": "urn:uuid:docking-cert-734",
+      "type": "DockingCertificationCredential",
+      "schema_id": "space:docking-certification:v1",
+      "issuer_id": "did:web:orbital-safety.example",
+      "subject_id": "did:web:lunar-logistics.example:spacecraft:odyssey-7",
+      "digest": "sha-384:Y3JlZGVudGlhbC1kaWdlc3Q",
+      "signature_valid": true,
+      "time_valid": true,
+      "status": "valid",
+      "status_checked_at": "2026-08-27T23:29:58Z",
+      "claims": {
+        "interfaces": ["IDSS"],
+        "vehicle_class": "orbital_transfer_vehicle"
+      }
+    }
+  ],
+  "holder_proof": {
+    "proof_id": "proof-001",
+    "challenge": "c3RhdGlvbi1jaGFsbGVuZ2U",
+    "audience": "station:waystation-1/port-3",
+    "session_id": "session:dock-2026-1842",
+    "verification_method": "did:peer:2.EzOdysseyEncounter#key-1",
+    "algorithm": "EdDSA",
+    "valid": true,
+    "verified_at": "2026-08-27T23:29:59Z"
+  },
+  "session": {
+    "session_id": "session:dock-2026-1842",
+    "subject_id": "did:peer:2.EzOdysseyEncounter",
+    "station_id": "station:waystation-1",
+    "port_id": "port-3",
+    "status": "authorized",
+    "expires_at": "2026-08-27T23:45:00Z",
+    "sequence_number": 3
+  },
+  "operational_readiness": {
+    "producer": "station:waystation-1:navigation-monitor",
+    "observed_at": "2026-08-27T23:29:59.880Z",
+    "ready": true,
+    "evidence_age_ms": 120,
+    "checks": [
+      { "name": "relative_navigation_valid", "passed": true },
+      { "name": "approach_corridor_clear", "passed": true },
+      { "name": "closing_rate_within_limit", "passed": true, "observed": 0.18, "limit": 0.2 }
+    ]
+  }
+}

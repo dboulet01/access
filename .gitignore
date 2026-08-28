@@ -1,0 +1,10 @@
+/build/
+/install/
+/log/
+/target/
+.venv/
+__pycache__/
+*.pyc
+.env
+.vscode/
+keys/

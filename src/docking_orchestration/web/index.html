@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Docking Operations</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">SD-01 / LIVE SIMULATION</p>
+        <h1>Docking operations</h1>
+      </div>
+      <div class="header-actions">
+        <label class="scenario-control" for="scenario">
+          <span>RUN PROFILE</span>
+          <select id="scenario">
+            <option value="nominal">Nominal authorization</option>
+            <option value="expired_credential">Expired vehicle credential</option>
+            <option value="corridor_violation">Approach corridor violation</option>
+            <option value="latch_not_ready">Latch telemetry incomplete</option>
+          </select>
+        </label>
+        <button id="rerun" type="button">Rerun simulation</button>
+        <div class="live"><span></span> LIVE</div>
+      </div>
+    </header>
+
+    <section class="viewport" aria-label="Spacecraft docking visualization">
+      <div class="stars"></div>
+      <div class="range-axis"><span>CHASER</span><span>DOCKING CORRIDOR</span><span>TARGET</span></div>
+      <div id="chaser" class="craft chaser" role="button" tabindex="0" aria-label="View Odyssey-7 configuration" aria-controls="chaser-config" aria-expanded="false">
+        <div class="solar left"></div><div class="body"></div><div class="port"></div><div class="solar right"></div>
+      </div>
+      <div class="approach-line"></div>
+      <div id="target" class="craft target" role="button" tabindex="0" aria-label="View Waystation-1 configuration" aria-controls="target-config" aria-expanded="false">
+        <div class="solar left"></div><div class="port"></div><div class="body"></div><div class="solar right"></div>
+      </div>
+      <div class="reticle"><i></i><b></b></div>
+      <div id="chaser-message" class="craft-message chaser-message" aria-live="polite">
+        <span>ODYSSEY-7</span><strong></strong><p></p>
+      </div>
+      <div id="station-message" class="craft-message station-message" aria-live="polite">
+        <span>WAYSTATION-1</span><strong></strong><p></p>
+      </div>
+      <aside id="chaser-config" class="craft-config chaser-config" aria-hidden="true" aria-label="Odyssey-7 configuration">
+        <div class="config-title"><div><span>CHASER</span><h3>Odyssey-7</h3></div><button class="config-close" type="button" data-close-config title="Close configuration" aria-label="Close Odyssey-7 configuration">X</button></div>
+        <dl>
+          <div><dt>Operator</dt><dd>Lunar Logistics</dd></div>
+          <div><dt>Mass</dt><dd>250 kg</dd></div>
+          <div><dt>Body</dt><dd>1.2 x 1.0 x 1.0 m</dd></div>
+          <div><dt>Control</dt><dd>ROS 2 kinematic</dd></div>
+          <div><dt>Interface</dt><dd>IDSS compatible</dd></div>
+          <div><dt>Identity</dt><dd>Encounter bound</dd></div>
+        </dl>
+      </aside>
+      <aside id="target-config" class="craft-config target-config" aria-hidden="true" aria-label="Waystation-1 configuration">
+        <div class="config-title"><div><span>STATION TARGET</span><h3>Waystation-1</h3></div><button class="config-close" type="button" data-close-config title="Close configuration" aria-label="Close Waystation-1 configuration">X</button></div>
+        <dl>
+          <div><dt>Port</dt><dd>port-3</dd></div>
+          <div><dt>Model</dt><dd>Static target</dd></div>
+          <div><dt>Body</dt><dd>1.6 x 1.4 x 1.4 m</dd></div>
+          <div><dt>Policy</dt><dd>commercial-docking-v3</dd></div>
+          <div><dt>Session</dt><dd>dock-2026-1842</dd></div>
+        </dl>
+        <section class="trust-summary" aria-label="Active trust bundle">
+          <div class="trust-title"><span>TRUST BUNDLE</span><strong>ACTIVE / V42</strong></div>
+          <div><span>Issuer groups</span><strong>Registrars + docking authorities</strong></div>
+          <div><span>Credential profiles</span><strong>Vehicle registration + IDSS</strong></div>
+          <div><span>DID adapters</span><strong>did:web + did:peer</strong></div>
+          <div><span>Freshness</span><strong>Cached / 7 day maximum age</strong></div>
+        </section>
+      </aside>
+      <div class="viewport-status">
+        <span id="state">STARTING</span>
+        <strong><span id="range">3.320</span> m</strong>
+      </div>
+    </section>
+
+    <section id="replay-controls" class="replay-controls" aria-label="Simulation replay">
+      <div class="replay-heading"><span>FLIGHT RECORDER</span><strong id="replay-label">Replay available after terminal outcome</strong></div>
+      <button id="replay-back" class="icon-button" type="button" title="Previous frame" aria-label="Previous replay frame" disabled>←</button>
+      <button id="replay-play" class="icon-button" type="button" title="Play replay" aria-label="Play replay" disabled>▶</button>
+      <button id="replay-forward" class="icon-button" type="button" title="Next frame" aria-label="Next replay frame" disabled>→</button>
+      <input id="replay-timeline" type="range" min="0" max="0" value="0" aria-label="Replay timeline" disabled>
+      <button id="replay-live" type="button" title="Return to completed run" disabled>Return live</button>
+    </section>
+
+    <section class="operations">
+      <div class="sequence" aria-label="Docking sequence">
+        <h2>Mission sequence</h2>
+        <ol id="stages">
+          <li data-state="0">Hold</li><li data-state="1">Approach</li><li data-state="2">Final approach</li><li data-state="3">Soft capture</li><li data-state="4">Hard dock</li>
+        </ol>
+      </div>
+      <div class="events">
+        <h2>Authority events</h2>
+        <div id="events"><p class="empty">Waiting for transition activity</p></div>
+      </div>
+    </section>
+
+    <section class="security" aria-label="Authorization workflow">
+      <div class="security-heading">
+        <div>
+          <p class="eyebrow">POLICY-BOUND AUTHORIZATION</p>
+          <h2 id="auth-scenario">Commercial methane refueling</h2>
+        </div>
+        <span id="auth-mode" class="mock-badge">MOCK POLICY WORKFLOW</span>
+      </div>
+
+      <div class="critical-gate" aria-live="polite">
+        <div class="critical-index"><span>CRITICAL GATE</span><strong id="critical-number">01 / 05</strong></div>
+        <div><span id="critical-status" class="gate-status">IN PROGRESS</span><h2 id="critical-title">Establish station trust</h2><p id="critical-detail">Load approved trust roots and issuer profiles.</p></div>
+      </div>
+
+      <div class="policy-technicals">
+        <div class="policy-heading"><h2>Policy checks for this run</h2><span id="policy-id">commercial-docking-v3</span></div>
+        <div class="policy-check-head"><span>Control</span><span>Requirement</span><span>Run value</span></div>
+        <div id="policy-checks"></div>
+      </div>
+
+      <div class="communications">
+        <div class="communications-heading">
+          <div><h2>Chaser / station communications</h2><p>Encounter messages carried between mission parties</p></div>
+          <div class="party-key"><span class="chaser-key">ODYSSEY-7</span><span class="station-key">WAYSTATION-1</span></div>
+        </div>
+        <div id="protocol-messages" class="protocol-messages"><p class="empty">Waiting for encounter traffic</p></div>
+      </div>
+
+      <div class="security-detail">
+        <div class="auth-log">
+          <h2>Local configuration and policy evidence</h2>
+          <div id="auth-events"><p class="empty">Waiting for local checks</p></div>
+        </div>
+        <div class="entitlements">
+          <h2>Issued entitlements</h2>
+          <div class="entitlement-head"><span>Action</span><span>Stage</span><span>TTL</span><span>Status</span></div>
+          <div id="entitlements"><p class="empty">No entitlements issued</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

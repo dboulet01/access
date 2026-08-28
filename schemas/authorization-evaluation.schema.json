@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://secure-docking.example/schemas/authorization-evaluation.schema.json",
+  "title": "Docking authorization evaluation input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol_version",
+    "evaluation_id",
+    "evaluated_at",
+    "policy",
+    "request",
+    "subject",
+    "issuer_trust",
+    "credentials",
+    "holder_proof",
+    "session",
+    "operational_readiness"
+  ],
+  "properties": {
+    "protocol_version": { "const": "1.0" },
+    "evaluation_id": { "$ref": "#/$defs/non_empty" },
+    "evaluated_at": { "$ref": "#/$defs/timestamp" },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "bundle_version", "policy_id", "policy_hash"],
+      "properties": {
+        "bundle_id": { "$ref": "#/$defs/non_empty" },
+        "bundle_version": { "type": "integer", "minimum": 1 },
+        "policy_id": { "$ref": "#/$defs/non_empty" },
+        "policy_hash": { "$ref": "#/$defs/digest" }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "request_id",
+        "action",
+        "previous_stage",
+        "requested_stage",
+        "station_id",
+        "port_id",
+        "mission_id",
+        "nonce"
+      ],
+      "properties": {
+        "request_id": { "$ref": "#/$defs/non_empty" },
+        "action": {
+          "enum": [
+            "enter_approach",
+            "enter_final_approach",
+            "engage_soft_capture",
+            "engage_hard_dock",
+            "open_service_interface",
+            "transfer_resource",
+            "disconnect",
+            "depart"
+          ]
+        },
+        "previous_stage": { "$ref": "#/$defs/stage" },
+        "requested_stage": { "$ref": "#/$defs/stage" },
+        "station_id": { "$ref": "#/$defs/non_empty" },
+        "port_id": { "$ref": "#/$defs/non_empty" },
+        "mission_id": { "$ref": "#/$defs/non_empty" },
+        "nonce": { "$ref": "#/$defs/base64url" },
+        "requested_constraints": { "$ref": "#/$defs/constraints" }
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["vehicle_id", "operator_id", "encounter_id"],
+      "properties": {
+        "vehicle_id": { "$ref": "#/$defs/non_empty" },
+        "operator_id": { "$ref": "#/$defs/non_empty" },
+        "encounter_id": { "$ref": "#/$defs/non_empty" },
+        "controller_id": { "$ref": "#/$defs/non_empty" }
+      }
+    },
+    "issuer_trust": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["issuer_id", "credential_types", "status", "key_state_hash"],
+        "properties": {
+          "issuer_id": { "$ref": "#/$defs/non_empty" },
+          "did_method": { "type": "string", "pattern": "^did:[a-z0-9]+$" },
+          "credential_types": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/non_empty" }
+          },
+          "status": { "enum": ["trusted", "suspended", "revoked", "expired", "unknown"] },
+          "key_state_hash": { "$ref": "#/$defs/digest" }
+        }
+      }
+    },
+    "credentials": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "credential_id": { "$ref": "#/$defs/non_empty" },
+          "type": { "$ref": "#/$defs/non_empty" },
+          "schema_id": { "$ref": "#/$defs/non_empty" },
+          "issuer_id": { "$ref": "#/$defs/non_empty" },
+          "subject_id": { "$ref": "#/$defs/non_empty" },
+          "digest": { "$ref": "#/$defs/digest" },
+          "signature_valid": { "type": "boolean" },
+          "time_valid": { "type": "boolean" },
+          "status": { "enum": ["valid", "suspended", "revoked", "unknown"] },
+          "status_checked_at": { "$ref": "#/$defs/timestamp" },
+          "claims": { "type": "object" }
+        },
+        "required": [
+          "credential_id",
+          "type",
+          "schema_id",
+          "issuer_id",
+          "subject_id",
+          "digest",
+          "signature_valid",
+          "time_valid",
+          "status",
+          "status_checked_at"
+        ]
+      }
+    },
+    "holder_proof": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "proof_id",
+        "challenge",
+        "audience",
+        "session_id",
+        "verification_method",
+        "algorithm",
+        "valid",
+        "verified_at"
+      ],
+      "properties": {
+        "proof_id": { "$ref": "#/$defs/non_empty" },
+        "challenge": { "$ref": "#/$defs/base64url" },
+        "audience": { "$ref": "#/$defs/non_empty" },
+        "session_id": { "$ref": "#/$defs/non_empty" },
+        "verification_method": { "$ref": "#/$defs/non_empty" },
+        "algorithm": { "$ref": "#/$defs/non_empty" },
+        "valid": { "type": "boolean" },
+        "verified_at": { "$ref": "#/$defs/timestamp" }
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session_id", "subject_id", "station_id", "port_id", "status", "expires_at", "sequence_number"],
+      "properties": {
+        "session_id": { "$ref": "#/$defs/non_empty" },
+        "subject_id": { "$ref": "#/$defs/non_empty" },
+        "station_id": { "$ref": "#/$defs/non_empty" },
+        "port_id": { "$ref": "#/$defs/non_empty" },
+        "status": { "enum": ["pending", "authorized", "revoked", "expired"] },
+        "expires_at": { "$ref": "#/$defs/timestamp" },
+        "sequence_number": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "operational_readiness": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer", "observed_at", "ready", "evidence_age_ms", "checks"],
+      "properties": {
+        "producer": { "$ref": "#/$defs/non_empty" },
+        "observed_at": { "$ref": "#/$defs/timestamp" },
+        "ready": { "type": "boolean" },
+        "evidence_age_ms": { "type": "integer", "minimum": 0 },
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "passed"],
+            "properties": {
+              "name": { "$ref": "#/$defs/non_empty" },
+              "passed": { "type": "boolean" },
+              "observed": {},
+              "limit": {}
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "non_empty": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "digest": { "type": "string", "pattern": "^(sha-256|sha-384|sha-512):[A-Za-z0-9_-]+$" },
+    "base64url": { "type": "string", "minLength": 22, "pattern": "^[A-Za-z0-9_-]+$" },
+    "stage": { "enum": ["hold", "approach", "final_approach", "soft_capture", "hard_dock", "servicing", "departure", "aborted"] },
+    "constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_closing_rate_mps": { "type": "number", "minimum": 0 },
+        "max_range_m": { "type": "number", "minimum": 0 },
+        "resource_type": { "$ref": "#/$defs/non_empty" },
+        "max_quantity": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    }
+  }
+}

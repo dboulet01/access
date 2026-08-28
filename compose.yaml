@@ -1,0 +1,88 @@
+x-visual-simulation: &visual-simulation
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: secure-docking-sim:humble-fortress
+  command:
+    - ros2
+    - launch
+    - docking_orchestration
+    - visual_sim.launch.py
+  ipc: host
+  stdin_open: true
+  tty: true
+
+services:
+  docking-sim:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: secure-docking-sim:humble-fortress
+    environment:
+      IGN_PARTITION: docking_baseline
+      ROS_DOMAIN_ID: "42"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    command:
+      - ros2
+      - launch
+      - docking_orchestration
+      - baseline_sim.launch.py
+    ipc: host
+    stdin_open: true
+    tty: true
+
+  docking-visual-1:
+    <<: *visual-simulation
+    environment:
+      IGN_PARTITION: docking_visual_1
+      ROS_DOMAIN_ID: "43"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+  docking-visual-2:
+    <<: *visual-simulation
+    environment:
+      IGN_PARTITION: docking_visual_2
+      ROS_DOMAIN_ID: "44"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+  docking-visual-3:
+    <<: *visual-simulation
+    environment:
+      IGN_PARTITION: docking_visual_3
+      ROS_DOMAIN_ID: "45"
+      RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+
+  docking-gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    image: secure-docking-sim:humble-fortress
+    command:
+      - ros2
+      - run
+      - docking_orchestration
+      - session_gateway
+    environment:
+      GATEWAY_PORT: "8080"
+      SESSION_IDLE_TIMEOUT_S: "1800"
+      SIMULATION_BACKENDS: docking-visual-1:8080,docking-visual-2:8080,docking-visual-3:8080
+    depends_on:
+      - docking-visual-1
+      - docking-visual-2
+      - docking-visual-3
+    ports:
+      - "127.0.0.1:8080:8080"
+
+  ngrok:
+    image: ngrok/ngrok:latest
+    command:
+      - http
+      - docking-gateway:8080
+      - --url
+      - ${NGROK_DOMAIN:-unisotropous-overmellow-genevieve.ngrok-free.dev}
+    environment:
+      NGROK_AUTHTOKEN: ${ngrok_authtoken}
+    depends_on:
+      - docking-gateway
+    ports:
+      - "127.0.0.1:4040:4040"

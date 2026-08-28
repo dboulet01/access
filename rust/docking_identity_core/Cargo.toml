@@ -1,0 +1,14 @@
+[package]
+name = "docking_identity_core"
+description = "Physics-independent identity and authorization core for spacecraft docking"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+ciborium.workspace = true
+coset.workspace = true
+ed25519-dalek.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+thiserror.workspace = true
