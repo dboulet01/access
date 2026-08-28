@@ -3,15 +3,7 @@
 Open, portable, fail-closed authorization for safety-critical interactions
 between spacecraft, stations, servicing vehicles, and robotic systems.
 
-The authorization protocol, security kernel, integration contracts, and
-conformance evidence are the product. The ROS 2 and Gazebo simulation in this
-repository is a reference environment that demonstrates and tests those
-capabilities; it is not a dependency of the security model.
-
-See [docs/project-principles.md](docs/project-principles.md) for the project's
-mission, product boundary, open-source commitment, and commercialization model.
-
-## The outcome
+## Overview
 
 The system answers one operational question:
 
@@ -24,15 +16,11 @@ scoped, replay-resistant entitlements enforced at the protected transition or
 actuation boundary. Missing, stale, revoked, replayed, or unverifiable authority
 fails closed according to mission policy.
 
-The first reference use case is visiting-vehicle progression through rendezvous,
-proximity operations, and docking. The intended product surface also supports
-servicing, refueling, capture, assembly, resource access, and other autonomous
-interactions between independently operated systems.
+The first reference use case covers visiting-vehicle progression through
+rendezvous, proximity operations, and docking. The same authorization model can
+be applied to servicing, refueling, capture, assembly, and resource access.
 
-See [docs/positioning.md](docs/positioning.md) for the problem, intended adopters,
-and category framing.
-
-## Product layers
+## Components
 
 1. **Open protocol:** identity, session, authority, revocation, and failure
 	semantics.
@@ -43,38 +31,16 @@ and category framing.
 4. **Conformance evidence:** schemas, test vectors, negative tests, threat
 	models, and reproducible builds.
 
-## Strategic assets
-
-The project measures progress by accumulating four assets:
-
-1. **Technical maturity:** portable kernel, stable protocol, adapters, fuzzing,
-	and formal analysis.
-2. **Operational credibility:** realistic servicing, station-access, refueling,
-	and degraded-link scenarios.
-3. **Integration credibility:** cFS, F Prime, Space ROS, DDS, and C interfaces.
-4. **Institutional credibility:** public governance, external contributors,
-	design partners, publications, and standards participation.
-
-The simulation belongs to operational credibility. It is a showcase and
-executable evidence environment for realistic interactions, policy decisions,
-failure modes, and protected outcomes. Simulation features are valuable when
-they make a capability or operational claim concrete; they are not an
-independent product objective.
-
-See [docs/roadmap.md](docs/roadmap.md) for the path from the current executable
-reference model to interoperable and assurance-focused releases.
-
-## Current maturity
+## Status
 
 The repository currently has two implemented slices:
 
 1. `docking_identity_core`, a physics-independent Rust security crate.
 2. A containerized ROS 2 Humble and Gazebo Fortress reference environment.
 
-The Rust core is not yet connected as the live ROS transition authority, and the
-project is not flight-qualified. The current development/mock authority makes
-the intended enforcement boundary executable while the production adapter is
-built.
+The Rust core is not yet connected as the live ROS transition authority. The
+reference environment currently uses a mock authority at the same enforcement
+boundary. This project is not flight-qualified.
 
 ## Docking reference environment
 
@@ -108,28 +74,6 @@ In another terminal, inspect its state:
 docker compose exec docking-sim ros2 topic echo /docking/status
 ```
 
-Run with human-readable activity logs for status, range, transition requests,
-and authority decisions. This continuous mode remains available at hard dock
-until stopped with `Ctrl+C`:
-
-```powershell
-docker compose run --rm docking-sim ros2 launch docking_orchestration baseline_sim.launch.py verbose:=true
-```
-
-To show the same verbose output and exit automatically after confirmed hard
-dock, enable the smoke monitor too:
-
-```powershell
-docker compose run --rm docking-sim ros2 launch docking_orchestration baseline_sim.launch.py verbose:=true smoke_test:=true
-```
-
-The telemetry interval defaults to 0.5 seconds and can be changed without
-increasing the controller's own logging:
-
-```powershell
-docker compose run --rm docking-sim ros2 launch docking_orchestration baseline_sim.launch.py verbose:=true telemetry_interval:=0.2
-```
-
 Run the self-terminating smoke test:
 
 ```powershell
@@ -147,16 +91,10 @@ Start the three-session visual simulation pool and gateway:
 docker compose up --build docking-gateway
 ```
 
-Open [http://localhost:8080](http://localhost:8080). Each assigned simulation
-remains idle at `HOLD` until **Start simulation** is selected. It then waits
-briefly at `HOLD` and uses a slower approach speed so the sequence is easy to
-follow. The display is driven by live ROS status, request, and decision
-topics from the same Gazebo-backed process used by the headless test.
-Each browser receives an HTTP-only session cookie and is pinned to one of three
-visual services. Each service has its own ROS domain and Gazebo partition, so
-three people can run different profiles concurrently without sharing state or
-transition decisions. A fourth new session receives HTTP `503` until an
-existing browser closes or its abandoned lease expires after 60 seconds.
+Open [http://localhost:8080](http://localhost:8080) and select **Start
+simulation**. Each browser is assigned one of three isolated ROS/Gazebo
+instances. A fourth session receives HTTP `503` until a slot is released or an
+abandoned lease expires after 60 seconds.
 
 Select **Start simulation** in the dashboard to reset the chaser and development
 gate and begin the selected profile. Opening or refreshing the dashboard never
@@ -182,14 +120,8 @@ root containing `ngrok_authtoken=<token>`, then run:
 docker compose up -d ngrok
 ```
 
-The configured public URL is
-[https://unisotropous-overmellow-genevieve.ngrok-free.dev](https://unisotropous-overmellow-genevieve.ngrok-free.dev).
-On ngrok's free tier, each browser must confirm the **Visit Site** warning once
-before the dashboard loads.
-The tunnel is intended for temporary demonstrations and does not add user
-authentication; anyone with the URL can claim a simulation slot and trigger a
-run. The ngrok inspector is available only locally at
-[http://localhost:4040](http://localhost:4040).
+The tunnel does not add authentication. Anyone with its URL can claim a
+simulation slot and trigger a run.
 
 Stop the simulation with `Ctrl+C`, then remove its container:
 
@@ -210,21 +142,14 @@ Run the Rust tests on any host with Rust:
 cargo test --workspace
 ```
 
-The ROS 2/Gazebo runtime is containerized. Python owns launch, simulation
-composition, the baseline kinematic adapter, visualization, and future Basilisk adapters.
-Rust will own identity, authorization, protected docking transitions, and the
-last software gate before actuator commands.
+## Documentation
 
-See [docs/architecture.md](docs/architecture.md) for package boundaries and the
-authorization replacement boundary.
-
-See [docs/authorization-policy.md](docs/authorization-policy.md) for the
-policy-bound decision model, schemas, entitlement semantics, and simulation
-mapping.
-
-See [docs/commercial-refueling-scenario.md](docs/commercial-refueling-scenario.md)
-for a complete practical run from organization onboarding through credential
-proof, docking entitlements, servicing authorization, and audit.
+- [Overview and terminology](docs/positioning.md)
+- [Design principles](docs/project-principles.md)
+- [Architecture](docs/architecture.md)
+- [Authorization policy](docs/authorization-policy.md)
+- [Commercial refueling scenario](docs/commercial-refueling-scenario.md)
+- [Roadmap](docs/roadmap.md)
 
 ### GPU override
 
@@ -237,12 +162,11 @@ docker compose -f compose.yaml -f compose.gpu.yaml up docking-sim
 
 ### Reference fidelity
 
-This baseline deliberately uses deterministic kinematic motion through Gazebo's
+The reference environment uses deterministic kinematic motion through Gazebo's
 `SetEntityPose` service. It validates world loading, ROS/Gazebo transport,
 spacecraft motion, state sequencing, and the authorization insertion point. It
 does not yet model thrusters, six-degree-of-freedom GNC, compliant contact,
-capture latches, or hard-dock constraints. Those belong behind the same
-controller and transition interfaces.
+capture latches, or hard-dock constraints.
 
 ## Security status
 

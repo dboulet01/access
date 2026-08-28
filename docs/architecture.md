@@ -1,13 +1,6 @@
 # Spacecraft Interaction Authorization Architecture
 
-This architecture implements the product boundary established in
-[project-principles.md](project-principles.md): the portable authorization
-protocol and kernel are the product, while ROS 2, Gazebo, Python orchestration,
-and the dashboard form a replaceable operational-credibility environment. That
-environment showcases product capabilities and produces executable evidence; it
-does not define the product architecture.
-
-## Product architecture
+## System overview
 
 ```mermaid
 flowchart LR
@@ -32,11 +25,11 @@ entitlement issuance and consumption, and deterministic failure behavior. ROS 2,
 DDS, cFS, F Prime, network transports, key stores, clocks, dynamics, and
 actuators connect through adapters.
 
-## Ownership rule
+## Reference environment
 
-Python coordinates simulation. Rust decides whether protected motion may occur.
-Gazebo, Basilisk, and future hardware adapters sit outside the identity protocol,
-so replacing a dynamics backend cannot alter authorization semantics.
+Python coordinates the reference simulation. The Rust authorization core is
+responsible for protected transition decisions. Dynamics and hardware adapters
+remain outside the authorization protocol.
 
 ```mermaid
 flowchart LR
@@ -143,17 +136,3 @@ ROS adapters and canonical state/command topics. Their native state machines do
 not become trusted authorities. For the Jazzy-based OpenAMR stack, use a separate
 Jazzy container and DDS-compatible IDL at the boundary instead of mixing Jazzy
 packages into the Humble/Fortress image.
-
-## Next implementation slice
-
-The simulation baseline is ready for identity work. The next slice is:
-
-1. Add opaque COSE envelope messages for `/identity/request`, `/identity/session`, and `/identity/authorize`.
-2. Build a Rust ROS node around `docking_identity_core`.
-3. Implement chaser/target challenge binding and expiring session grants.
-4. Replace `development_gate` in the launch file with that Rust node.
-5. Add negative smoke tests proving final approach, soft capture, and hard dock remain blocked without the corresponding evidence.
-
-After the authorization path is integrated, simulation fidelity can increase
-independently through thruster dynamics, relative navigation sensors, contact
-mechanics, capture joints, MoveIt berthing, and Basilisk adapters.

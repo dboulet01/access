@@ -1,9 +1,7 @@
 # Product Roadmap
 
-The roadmap prioritizes a portable and independently useful authorization
-product. Simulation work belongs to the operational-credibility track and is
-included only where it demonstrates, tests, or produces evidence for that
-product.
+This roadmap tracks the work required for a portable, interoperable
+authorization implementation.
 
 ## Phase 1: Executable reference model
 
@@ -67,16 +65,3 @@ repeatable evidence rather than reference demonstrations alone.
 
 **Exit condition:** At least one external organization uses the open interfaces
 in a representative operational or qualification environment.
-
-## Scope discipline
-
-Features are prioritized when they strengthen protocol portability, enforcement,
-interoperability, or assurance. Simulator fidelity, dashboard features, and
-mission storytelling are secondary unless they expose a security requirement or
-validate a product claim.
-
-The reference environment should focus on representative scenarios: visiting-
-vehicle admission, servicing, station access, refueling, communication loss,
-credential expiry, revocation, replay attempts, aborts, and recovery. Each
-scenario should identify the capability demonstrated and the evidence it
-produces.

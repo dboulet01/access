@@ -1,4 +1,4 @@
-# Positioning
+# Overview
 
 ## Category
 
@@ -8,10 +8,9 @@ This project provides authorization infrastructure for autonomous physical
 interactions between spacecraft, stations, servicing vehicles, and robots
 operated by different organizations.
 
-## Component terminology
+## Terminology
 
-Until durable project and component brands are selected, documentation uses
-neutral names that describe responsibility:
+Documentation uses these terms consistently:
 
 - **Spacecraft Interaction Authorization:** the system and product category
 - **interaction authorization protocol:** normative peer messages and behavior
@@ -22,10 +21,7 @@ neutral names that describe responsibility:
 - **reference environment:** executable evidence for representative operations
 - **docking reference environment:** the ROS 2/Gazebo demonstration in this repository
 
-These terms are descriptions, not product brands. Existing source package names
-remain implementation identifiers until a deliberate compatibility migration.
-
-## One-sentence description
+## Summary
 
 An open, fail-closed authorization layer that lets independently operated space
 systems establish trust, grant narrowly scoped authority, and approve individual
@@ -63,11 +59,7 @@ proximity operations, and docking stages. Docking makes the authorization model
 concrete because each transition has physical consequences and independent
 parties may control the station and vehicle.
 
-The simulation exists to build operational credibility for this use case. It
-should demonstrate the capability in realistic workflows and adverse conditions,
-not evolve into a separate simulation product.
-
-The same model is intended to extend to:
+The same model applies to:
 
 - on-orbit servicing and inspection
 - refueling and resource transfer
@@ -89,18 +81,5 @@ The project composes with secure communications, flight frameworks, docking
 standards, and mission safety logic. It supplies the missing application-level
 authorization contract between them.
 
-## Intended adopters
-
-- commercial station and infrastructure operators
-- visiting-vehicle and logistics providers
-- on-orbit servicing and refueling companies
-- spacecraft primes and flight-software integrators
-- civil and defense organizations coordinating multi-operator missions
-- standards, assurance, and research organizations
-
-## Adoption promise
-
-An adopter should be able to use the protocol and portable kernel without ROS 2,
-Gazebo, Python, this dashboard, or a commercial service agreement. Integration
-services, mission policy engineering, qualification evidence, certified builds,
-and long-term support may be offered around that open foundation.
+The protocol and authorization core are designed to operate independently of
+ROS 2, Gazebo, Python, and the included dashboard.

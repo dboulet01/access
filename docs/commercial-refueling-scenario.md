@@ -227,23 +227,11 @@ docker compose up --build docking-gateway
 
 Open [http://localhost:8080](http://localhost:8080). The gateway assigns each
 browser to an isolated ROS domain and Gazebo partition for the duration of its
-idle lease. The dashboard displays:
+idle lease. The dashboard displays live state and range, authorization checks,
+protocol messages, local evidence, issued entitlements, and replay data.
 
-- live Gazebo-backed range and docking state
-- the current critical authorization gate and a per-profile matrix of policy
-  requirements, measured run values, and failed controls
-- spacecraft configuration panels opened by selecting Odyssey-7 or Waystation-1,
-  including station trust-bundle, policy, port, and session details
-- directional chaser-to-station protocol messages in a separate transcript
-- station-local readiness and policy evidence in an audit view
-- stage entitlements and consumption state
-- in-scene protocol callouts and a post-run flight recorder synchronized to
-  mission state, range, authorization checkpoints, and exchanged messages
-
-Choose a deterministic **Run profile**, then select **Start simulation** to
-reset the chaser, policy authority, session workflow, entitlements, and audit
-view. The flight recorder becomes available after either successful hard dock
-or a deterministic authorization denial, without changing live backend state.
+Choose a **Run profile**, then select **Start simulation**. The flight recorder
+becomes available after successful hard dock or an authorization denial.
 Available profiles are:
 
 | Profile | Denied gate | Evidence shown |
@@ -253,18 +241,8 @@ Available profiles are:
 | Approach corridor violation | Enter final approach at `1.120 m` | Cross-track error, limit, closing rate, and corridor ID |
 | Latch telemetry incomplete | Engage hard dock at `0.040 m` | Ready-latch count, ring load, relative rate, and required count |
 
-Failure profiles are intentionally selected rather than random. This keeps
-demonstrations reproducible and lets an observer connect the stopped physical
-state to one policy decision. A denial creates no entitlement, halts the
-controller at that checkpoint, and remains visible until another rerun.
-
-The authority replays its onboarding
-flow over 15.5 seconds, the controller holds for 19 seconds, and then
-begins docking. At each physical gate, the chaser request remains visible while
-the station evaluates it for 2.5 seconds before responding. In-scene callouts
-remain visible for six seconds and include protocol identifiers, cryptographic
-algorithm/profile details, audience binding, measured constraints, entitlement
-TTL, and replay-consumption status.
+Failure profiles are deterministic. A denial creates no entitlement and halts
+the controller at the corresponding checkpoint.
 
 ## Implementation Boundary
 
