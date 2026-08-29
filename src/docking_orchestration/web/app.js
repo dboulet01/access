@@ -343,7 +343,7 @@ async function rerun() {
     stateNode.textContent = "RESET FAILED";
   } finally {
     rerunButton.disabled = false;
-    rerunButton.textContent = "Start simulation";
+    rerunButton.textContent = "Run validation";
   }
 }
 

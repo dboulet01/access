@@ -1,10 +1,12 @@
-# Overview
+# ACCESS Overview
+
+**Access Control and Credential Evaluation for Space Systems**
 
 ## Category
 
-**Spacecraft Interaction Authorization**
+**Spacecraft interaction authorization**
 
-This project provides authorization infrastructure for autonomous physical
+ACCESS provides authorization infrastructure for autonomous physical
 interactions between spacecraft, stations, servicing vehicles, and robots
 operated by different organizations.
 
@@ -12,7 +14,8 @@ operated by different organizations.
 
 Documentation uses these terms consistently:
 
-- **Spacecraft Interaction Authorization:** the system and product category
+- **ACCESS:** the project and reference implementation
+- **spacecraft interaction authorization:** the system and product category
 - **interaction authorization protocol:** normative peer messages and behavior
 - **authorization core:** portable policy, state, and entitlement implementation
 - **integration adapter:** binding to a flight, robotics, or transport framework

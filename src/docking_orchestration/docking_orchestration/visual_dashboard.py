@@ -86,7 +86,7 @@ class DashboardState:
                 state_id=-1,
                 range_m=3.32,
                 transition_pending=False,
-                events=[{"kind": "request", "text": "Simulation rerun requested"}],
+                events=[{"kind": "request", "text": "Validation run requested"}],
             )
         self.rerun_requested.set()
 

@@ -1,4 +1,6 @@
-# Spacecraft Interaction Authorization Architecture
+# ACCESS Architecture
+
+**Access Control and Credential Evaluation for Space Systems**
 
 ## System overview
 

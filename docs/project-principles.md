@@ -1,8 +1,9 @@
-# Project Principles
+# ACCESS Project Principles
 
 ## Mission
 
-This project develops an open, portable, fail-closed authorization layer for
+ACCESS (**Access Control and Credential Evaluation for Space Systems**)
+develops an open, portable, fail-closed authorization layer for
 safety-critical interactions between independently operated spacecraft,
 stations, servicing vehicles, and robotic systems.
 
@@ -11,7 +12,7 @@ Gazebo reference environment.
 
 ## Scope
 
-The project category is **Spacecraft Interaction Authorization**. Its outcome is
+The project category is **spacecraft interaction authorization**. Its outcome is
 that independently operated systems can establish trust, grant narrowly scoped
 authority, approve individual safety-critical actions, and fail safely without
 continuous ground control.
