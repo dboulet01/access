@@ -1,5 +1,5 @@
 [package]
-name = "docking_identity_core"
+name = "access_core"
 description = "Portable authorization core for safety-critical spacecraft interactions"
 edition.workspace = true
 license.workspace = true
@@ -13,7 +13,12 @@ path = "src/bin/access_authority.rs"
 name = "access-signer"
 path = "src/bin/access_signer.rs"
 
+[[bin]]
+name = "access-entitlement-verifier"
+path = "src/bin/access_entitlement_verifier.rs"
+
 [dependencies]
+cedar-policy.workspace = true
 ciborium.workspace = true
 chrono.workspace = true
 coset.workspace = true
@@ -23,4 +28,5 @@ hex.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://access-space.example/schemas/access-authorization-policy-bundle.schema.json",
+  "title": "ACCESS authorization policy bundle manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "bundle_id",
+    "bundle_version",
+    "issued_at",
+    "valid_until",
+    "source_file"
+  ],
+  "properties": {
+    "bundle_id": { "type": "string", "minLength": 1 },
+    "bundle_version": { "type": "integer", "minimum": 1 },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "valid_until": { "type": "string", "format": "date-time" },
+    "source_file": { "type": "string", "minLength": 1 }
+  }
+}

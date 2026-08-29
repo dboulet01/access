@@ -1,22 +1,23 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct AuthorizationPolicy {
-    pub policy_id: String,
-    pub policy_version: u64,
+pub struct ProtocolProfile {
+    pub schema_version: String,
+    pub profile_id: String,
+    pub profile_version: u64,
     pub valid_from: String,
     pub valid_until: String,
-    pub trust_bundle: PolicyTrustBundle,
+    pub trust_bundle: TrustBundleRequirements,
     pub credential_profiles: Vec<CredentialProfile>,
-    pub stage_policies: Vec<StagePolicy>,
+    pub stage_rules: Vec<StageRuleProfile>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct PolicyTrustBundle {
+pub struct TrustBundleRequirements {
     pub bundle_id: String,
     pub minimum_version: u64,
     pub maximum_age_s: i64,
@@ -32,31 +33,21 @@ pub struct CredentialProfile {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct StagePolicy {
+pub struct StageRuleProfile {
     pub rule_id: String,
     pub action: String,
     pub from_stage: String,
     pub to_stage: String,
-    pub required_credential_profiles: Vec<String>,
     pub holder_proof_required: bool,
     pub required_session_status: String,
     pub maximum_proof_age_s: Option<i64>,
     pub readiness: ReadinessRule,
     pub entitlement_ttl_s: u64,
-    #[serde(default)]
-    pub constraints: Constraints,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ReadinessRule {
     pub maximum_age_ms: i64,
-    pub required_checks: Vec<String>,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub struct Constraints {
-    pub max_closing_rate_mps: Option<f64>,
-    pub max_range_m: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -77,20 +68,20 @@ pub struct VerifiedCredentialEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct RuleDecision {
-    pub policy_id: String,
-    pub policy_version: u64,
+pub struct ProtocolRuleDecision {
+    pub profile_id: String,
+    pub profile_version: u64,
     pub rule_id: String,
     pub entitlement_ttl_s: u64,
 }
 
 #[derive(Clone, Debug, Error, Eq, PartialEq)]
-pub enum PolicyError {
-    #[error("authorization policy is outside its validity interval")]
-    PolicyExpired,
-    #[error("configured trust bundle does not satisfy policy")]
+pub enum ProtocolProfileError {
+    #[error("protocol profile is outside its validity interval")]
+    ProfileExpired,
+    #[error("configured trust bundle does not satisfy protocol profile")]
     TrustBundleMismatch,
-    #[error("no policy rule matches this transition")]
+    #[error("no protocol rule matches this transition")]
     NoMatchingRule,
     #[error("required credential profile is missing or invalid")]
     CredentialRequired,
@@ -100,15 +91,11 @@ pub enum PolicyError {
     SessionRequired,
     #[error("readiness evidence is stale")]
     ReadinessStale,
-    #[error("required readiness check failed: {0}")]
-    ReadinessFailed(String),
-    #[error("operational constraint failed")]
-    ConstraintFailed,
-    #[error("policy timestamp is invalid")]
+    #[error("protocol profile timestamp is invalid")]
     InvalidTimestamp,
 }
 
-impl AuthorizationPolicy {
+impl ProtocolProfile {
     pub fn from_json(encoded: &[u8]) -> Result<Self, serde_json::Error> {
         serde_json::from_slice(encoded)
     }
@@ -126,104 +113,95 @@ impl AuthorizationPolicy {
         holder_proof_at_s: Option<i64>,
         session_authorized: bool,
         readiness: &ReadinessEvidence,
-    ) -> Result<RuleDecision, PolicyError> {
-        let valid_from = parse_timestamp(&self.valid_from)?;
-        let valid_until = parse_timestamp(&self.valid_until)?;
-        if now_s < valid_from || now_s > valid_until {
-            return Err(PolicyError::PolicyExpired);
-        }
-        if self.trust_bundle.bundle_id != trust_bundle_id
-            || trust_bundle_version < self.trust_bundle.minimum_version
-            || now_s.saturating_sub(trust_bundle_issued_at_s) > self.trust_bundle.maximum_age_s
-        {
-            return Err(PolicyError::TrustBundleMismatch);
-        }
+    ) -> Result<ProtocolRuleDecision, ProtocolProfileError> {
+        self.validate_foundation(
+            now_s,
+            trust_bundle_id,
+            trust_bundle_version,
+            trust_bundle_issued_at_s,
+        )?;
+        self.validate_credentials(credentials, now_s)?;
 
         let rule = self
-            .stage_policies
+            .stage_rules
             .iter()
             .find(|rule| rule.from_stage == from_stage && rule.to_stage == to_stage)
-            .ok_or(PolicyError::NoMatchingRule)?;
-        self.verify_credentials(rule, credentials, now_s)?;
+            .ok_or(ProtocolProfileError::NoMatchingRule)?;
         if rule.holder_proof_required
             && holder_proof_at_s.is_none_or(|proof_at| {
                 now_s.saturating_sub(proof_at) > rule.maximum_proof_age_s.unwrap_or(0)
             })
         {
-            return Err(PolicyError::HolderProofRequired);
+            return Err(ProtocolProfileError::HolderProofRequired);
         }
         if rule.required_session_status == "authorized" && !session_authorized {
-            return Err(PolicyError::SessionRequired);
+            return Err(ProtocolProfileError::SessionRequired);
         }
         if now_s
             .saturating_mul(1000)
             .saturating_sub(readiness.observed_at_ms)
             > rule.readiness.maximum_age_ms
         {
-            return Err(PolicyError::ReadinessStale);
+            return Err(ProtocolProfileError::ReadinessStale);
         }
-        if let Some(failed_check) = rule
-            .readiness
-            .required_checks
-            .iter()
-            .find(|check| !readiness.checks.get(*check).copied().unwrap_or(false))
-        {
-            return Err(PolicyError::ReadinessFailed(failed_check.clone()));
-        }
-        if rule
-            .constraints
-            .max_closing_rate_mps
-            .is_some_and(|limit| readiness.closing_rate_mps > limit)
-            || rule
-                .constraints
-                .max_range_m
-                .is_some_and(|limit| readiness.range_m > limit)
-        {
-            return Err(PolicyError::ConstraintFailed);
-        }
-
-        Ok(RuleDecision {
-            policy_id: self.policy_id.clone(),
-            policy_version: self.policy_version,
+        Ok(ProtocolRuleDecision {
+            profile_id: self.profile_id.clone(),
+            profile_version: self.profile_version,
             rule_id: rule.rule_id.clone(),
             entitlement_ttl_s: rule.entitlement_ttl_s,
         })
     }
 
-    fn verify_credentials(
+    pub fn validate_foundation(
         &self,
-        rule: &StagePolicy,
+        now_s: i64,
+        trust_bundle_id: &str,
+        trust_bundle_version: u64,
+        trust_bundle_issued_at_s: i64,
+    ) -> Result<(), ProtocolProfileError> {
+        let valid_from = parse_timestamp(&self.valid_from)?;
+        let valid_until = parse_timestamp(&self.valid_until)?;
+        if now_s < valid_from || now_s > valid_until {
+            return Err(ProtocolProfileError::ProfileExpired);
+        }
+        if self.trust_bundle.bundle_id != trust_bundle_id
+            || trust_bundle_version < self.trust_bundle.minimum_version
+            || now_s.saturating_sub(trust_bundle_issued_at_s) > self.trust_bundle.maximum_age_s
+        {
+            return Err(ProtocolProfileError::TrustBundleMismatch);
+        }
+        Ok(())
+    }
+
+    pub fn validate_credentials(
+        &self,
         credentials: &[VerifiedCredentialEvidence],
         now_s: i64,
-    ) -> Result<(), PolicyError> {
-        let required: HashSet<_> = rule.required_credential_profiles.iter().collect();
-        for profile_id in required {
+    ) -> Result<(), ProtocolProfileError> {
+        for credential in credentials {
             let profile = self
                 .credential_profiles
                 .iter()
-                .find(|profile| &profile.profile_id == profile_id)
-                .ok_or(PolicyError::CredentialRequired)?;
-            let verified = credentials.iter().find(|credential| {
-                credential.profile_id == profile.profile_id
-                    && credential.credential_type == profile.credential_type
-                    && credential.schema_id == profile.schema_id
-                    && profile.issuer_groups.contains(&credential.issuer_group)
-                    && profile.maximum_status_age_s.is_none_or(|maximum_age| {
-                        now_s.saturating_sub(credential.status_checked_at_s) <= maximum_age
-                    })
-            });
-            if verified.is_none() {
-                return Err(PolicyError::CredentialRequired);
+                .find(|profile| profile.profile_id == credential.profile_id)
+                .ok_or(ProtocolProfileError::CredentialRequired)?;
+            if credential.credential_type != profile.credential_type
+                || credential.schema_id != profile.schema_id
+                || !profile.issuer_groups.contains(&credential.issuer_group)
+                || profile.maximum_status_age_s.is_some_and(|maximum_age| {
+                    now_s.saturating_sub(credential.status_checked_at_s) > maximum_age
+                })
+            {
+                return Err(ProtocolProfileError::CredentialRequired);
             }
         }
         Ok(())
     }
 }
 
-fn parse_timestamp(value: &str) -> Result<i64, PolicyError> {
+fn parse_timestamp(value: &str) -> Result<i64, ProtocolProfileError> {
     DateTime::parse_from_rfc3339(value)
         .map(|time| time.timestamp())
-        .map_err(|_| PolicyError::InvalidTimestamp)
+        .map_err(|_| ProtocolProfileError::InvalidTimestamp)
 }
 
 #[cfg(test)]
@@ -251,20 +229,16 @@ mod tests {
 
     #[test]
     fn evaluates_repository_policy_against_fresh_readiness() {
-        let policy = AuthorizationPolicy::from_json(include_bytes!(
-            "../../../examples/authorization/commercial-docking.policy.json"
+        let policy = ProtocolProfile::from_json(include_bytes!(
+            "../../../config/access/access-protocol-profile.json"
         ))
         .unwrap();
         let now_s = 1_787_900_100;
-        let mut checks = HashMap::new();
-        checks.insert("relative_navigation_valid".into(), true);
-        checks.insert("approach_corridor_clear".into(), true);
-        checks.insert("closing_rate_within_limit".into(), true);
         let readiness = ReadinessEvidence {
             observed_at_ms: now_s * 1000,
             range_m: 1.12,
             closing_rate_mps: 0.18,
-            checks,
+            checks: HashMap::new(),
         };
 
         let decision = policy
@@ -284,10 +258,8 @@ mod tests {
         assert_eq!(decision.rule_id, "enter-final-approach");
         assert_eq!(decision.entitlement_ttl_s, 30);
 
-        let mut failed = readiness;
-        failed
-            .checks
-            .insert("approach_corridor_clear".into(), false);
+        let mut stale = readiness;
+        stale.observed_at_ms -= 501;
         assert_eq!(
             policy.evaluate(
                 "approach",
@@ -299,11 +271,9 @@ mod tests {
                 &credentials(),
                 Some(now_s - 1),
                 true,
-                &failed,
+                &stale,
             ),
-            Err(PolicyError::ReadinessFailed(
-                "approach_corridor_clear".into()
-            ))
+            Err(ProtocolProfileError::ReadinessStale)
         );
     }
 }

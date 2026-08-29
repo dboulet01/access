@@ -1,0 +1,20 @@
+{
+  "bundle_id": "odyssey-7-access-authorities",
+  "version": 1,
+  "client_id": "odyssey-7",
+  "valid_from": "2026-08-29T00:00:00Z",
+  "valid_until": "2027-01-01T00:00:00Z",
+  "environment": "simulation",
+  "trusted_authorities": [
+    {
+      "authority_id": "waystation-1",
+      "signing_keys": [
+        {
+          "key_id": "waystation-1",
+          "algorithm": "Ed25519",
+          "public_key_hex": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394"
+        }
+      ]
+    }
+  ]
+}

@@ -4,10 +4,11 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::{
-    AuthorizationContext, AuthorizationPolicy, AuthorizedStage, CredentialClaims, DockingEvent,
-    DockingState, IdentityKey, MessageType, PolicyError, ProtocolClaims, ProtocolError,
-    ReadinessEvidence, ReplayCache, TransitionError, TrustStore, VerifiedCredentialEvidence,
-    VerifiedEnvelope, issue_credential, reduce, sign_envelope, verify_credential, verify_envelope,
+    AccessDecision, AccessPolicyError, AuthorizationContext, AuthorizedStage, CedarPolicyEngine,
+    CredentialClaims, DockingEvent, DockingState, IdentityKey, MessageType, ProtocolClaims,
+    ProtocolError, ProtocolProfile, ProtocolProfileError, ReadinessEvidence, ReplayCache,
+    TransitionError, TrustStore, VerifiedCredentialEvidence, VerifiedEnvelope, issue_credential,
+    reduce, sign_envelope, verify_credential, verify_envelope,
 };
 
 const MAX_CLOCK_SKEW_S: i64 = 30;
@@ -37,24 +38,29 @@ pub struct TransitionOutcome {
     pub resulting_state: u8,
     pub reason: String,
     pub session_id: Option<String>,
-    pub policy_id: Option<String>,
-    pub policy_version: Option<u64>,
+    pub protocol_profile_id: Option<String>,
+    pub protocol_profile_version: Option<u64>,
     pub rule_id: Option<String>,
     pub grant_id: Option<String>,
     pub entitlement_ttl_s: Option<u64>,
+    pub grant_expires_at_s: Option<i64>,
+    pub signed_grant_hex: Option<String>,
+    pub authorization_decision: Option<AccessDecision>,
     pub events: Vec<AccessEvent>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SessionOutcome {
     pub session_id: String,
-    pub policy_id: String,
-    pub policy_version: u64,
+    pub protocol_profile_id: String,
+    pub protocol_profile_version: u64,
+    pub authorization_decision: AccessDecision,
     pub events: Vec<AccessEvent>,
 }
 
 pub struct AccessEngineConfig {
-    pub policy: AuthorizationPolicy,
+    pub protocol_profile: ProtocolProfile,
+    pub authorization_policy_engine: CedarPolicyEngine,
     pub trust_bundle_id: String,
     pub trust_bundle_version: u64,
     pub trust_bundle_issued_at_s: i64,
@@ -72,6 +78,10 @@ pub enum SessionError {
     CredentialMissing,
     #[error("authorization grant does not match the requested stage")]
     GrantMismatch,
+    #[error("ACCESS authorization policy evaluation failed: {0}")]
+    AuthorizationPolicy(#[from] AccessPolicyError),
+    #[error("protocol policy validation failed: {0}")]
+    ProtocolProfile(#[from] ProtocolProfileError),
     #[error("operating-system random source failed")]
     RandomSource,
 }
@@ -143,8 +153,12 @@ impl AccessEngine {
         Ok(())
     }
 
-    pub fn policy(&self) -> &AuthorizationPolicy {
-        &self.config.policy
+    pub fn protocol_profile(&self) -> &ProtocolProfile {
+        &self.config.protocol_profile
+    }
+
+    pub fn authorization_policy(&self) -> &crate::AccessPolicyMetadata {
+        self.config.authorization_policy_engine.metadata()
     }
 
     pub fn establish_session(
@@ -157,7 +171,7 @@ impl AccessEngine {
         let session_id = format!("access-{}", hex::encode(random_nonce()?));
         let request = exchange(
             ProtocolClaims {
-                message_type: MessageType::IdentityRequest,
+                message_type: MessageType::AccessRequest,
                 issuer: self.chaser.key_id().into(),
                 recipient: self.station.key_id().into(),
                 issued_at_s: now_s,
@@ -168,8 +182,12 @@ impl AccessEngine {
                 credentials: vec![],
                 grant_id: None,
                 expires_at_s: None,
-                policy_id: None,
+                protocol_profile_id: None,
+                protocol_profile_version: None,
                 rule_id: None,
+                authorization_policy_bundle_id: None,
+                authorization_policy_bundle_version: None,
+                authorization_policy_sha256: None,
             },
             &self.chaser,
             &self.station_peer_trust,
@@ -193,8 +211,12 @@ impl AccessEngine {
                 credentials: vec![],
                 grant_id: None,
                 expires_at_s: None,
-                policy_id: None,
+                protocol_profile_id: None,
+                protocol_profile_version: None,
                 rule_id: None,
+                authorization_policy_bundle_id: None,
+                authorization_policy_bundle_version: None,
+                authorization_policy_sha256: None,
             },
             &self.station,
             &self.chaser_peer_trust,
@@ -248,8 +270,12 @@ impl AccessEngine {
                 credentials,
                 grant_id: None,
                 expires_at_s: None,
-                policy_id: None,
+                protocol_profile_id: None,
+                protocol_profile_version: None,
                 rule_id: None,
+                authorization_policy_bundle_id: None,
+                authorization_policy_bundle_version: None,
+                authorization_policy_sha256: None,
             },
             &self.chaser,
             &self.station_peer_trust,
@@ -281,8 +307,23 @@ impl AccessEngine {
                 })
             })
             .collect::<Result<Vec<_>, ProtocolError>>()?;
-        self.authorization.session_authorized = true;
+        self.config.protocol_profile.validate_foundation(
+            now_s,
+            &self.config.trust_bundle_id,
+            self.config.trust_bundle_version,
+            self.config.trust_bundle_issued_at_s,
+        )?;
+        self.config
+            .protocol_profile
+            .validate_credentials(&self.verified_credentials, now_s)?;
         self.holder_proof_at_s = Some(now_s);
+        let authorization_decision = self.config.authorization_policy_engine.authorize_session(
+            self.chaser.key_id(),
+            self.station.key_id(),
+            &self.verified_credentials,
+            true,
+        )?;
+        self.authorization.session_authorized = true;
         self.session_id = Some(session_id.clone());
 
         let events = vec![
@@ -294,11 +335,11 @@ impl AccessEngine {
                 None,
             ),
             event(
-                "IDENTITY_REQUEST_VERIFIED",
-                "COSE_Sign1 request verified with replay protection",
+                "ACCESS_REQUEST_VERIFIED",
+                "Signed ACCESS request verified with replay protection",
                 Some(&request.signer),
                 Some(self.station.key_id()),
-                Some("IDENTITY_REQUEST"),
+                Some("ACCESS_REQUEST"),
             ),
             event(
                 "SESSION_OFFER_VERIFIED",
@@ -333,6 +374,18 @@ impl AccessEngine {
                 Some("SESSION_PROOF"),
             ),
             event(
+                "ACCESS_INITIAL_CLAIMS_ALLOWED",
+                &format!(
+                    "bundle={}@{}; hash={}",
+                    authorization_decision.policy.bundle_id,
+                    authorization_decision.policy.bundle_version,
+                    authorization_decision.policy.policy_sha256
+                ),
+                Some(self.station.key_id()),
+                Some(self.chaser.key_id()),
+                Some("ACCESS_AUTHORIZATION"),
+            ),
+            event(
                 "SESSION_AUTHORIZED",
                 &format!("session={session_id}; replay caches active"),
                 Some(self.station.key_id()),
@@ -342,8 +395,9 @@ impl AccessEngine {
         ];
         Ok(SessionOutcome {
             session_id,
-            policy_id: self.config.policy.policy_id.clone(),
-            policy_version: self.config.policy.policy_version,
+            protocol_profile_id: self.config.protocol_profile.profile_id.clone(),
+            protocol_profile_version: self.config.protocol_profile.profile_version,
+            authorization_decision,
             events,
         })
     }
@@ -375,8 +429,12 @@ impl AccessEngine {
                 credentials: vec![],
                 grant_id: None,
                 expires_at_s: None,
-                policy_id: None,
+                protocol_profile_id: None,
+                protocol_profile_version: None,
                 rule_id: None,
+                authorization_policy_bundle_id: None,
+                authorization_policy_bundle_version: None,
+                authorization_policy_sha256: None,
             },
             &self.station,
             &self.chaser_peer_trust,
@@ -397,8 +455,12 @@ impl AccessEngine {
                 credentials: vec![],
                 grant_id: None,
                 expires_at_s: None,
-                policy_id: None,
+                protocol_profile_id: None,
+                protocol_profile_version: None,
                 rule_id: None,
+                authorization_policy_bundle_id: None,
+                authorization_policy_bundle_version: None,
+                authorization_policy_sha256: None,
             },
             &self.chaser,
             &self.station_peer_trust,
@@ -423,12 +485,12 @@ impl AccessEngine {
             .ok_or(TransitionError::InvalidTransition)?;
         let matched_rule_id = self
             .config
-            .policy
-            .stage_policies
+            .protocol_profile
+            .stage_rules
             .iter()
             .find(|rule| rule.from_stage == from_stage && rule.to_stage == to_stage)
             .map(|rule| rule.rule_id.clone());
-        let rule = match self.config.policy.evaluate(
+        let rule = match self.config.protocol_profile.evaluate(
             from_stage,
             to_stage,
             now_s,
@@ -444,9 +506,52 @@ impl AccessEngine {
             Err(error) => {
                 let mut outcome = policy_denied(previous, error);
                 outcome.session_id = Some(session_id.clone());
-                outcome.policy_id = Some(self.config.policy.policy_id.clone());
-                outcome.policy_version = Some(self.config.policy.policy_version);
+                outcome.protocol_profile_id = Some(self.config.protocol_profile.profile_id.clone());
+                outcome.protocol_profile_version =
+                    Some(self.config.protocol_profile.profile_version);
                 outcome.rule_id = matched_rule_id;
+                outcome.events.insert(0, proof_event);
+                return Ok(outcome);
+            }
+        };
+        let readiness_fresh = now_s
+            .saturating_mul(1000)
+            .saturating_sub(readiness.observed_at_ms)
+            <= self
+                .config
+                .protocol_profile
+                .stage_rules
+                .iter()
+                .find(|candidate| candidate.rule_id == rule.rule_id)
+                .map(|candidate| candidate.readiness.maximum_age_ms)
+                .unwrap_or(0);
+        let authorization_decision = match self
+            .config
+            .authorization_policy_engine
+            .authorize_transition(
+                self.chaser.key_id(),
+                self.station.key_id(),
+                &self
+                    .config
+                    .protocol_profile
+                    .stage_rules
+                    .iter()
+                    .find(|candidate| candidate.rule_id == rule.rule_id)
+                    .map(|candidate| candidate.action.as_str())
+                    .unwrap_or_default(),
+                &self.verified_credentials,
+                self.holder_proof_at_s.is_some(),
+                self.authorization.session_authorized,
+                readiness,
+                readiness_fresh,
+            ) {
+            Ok(decision) => decision,
+            Err(error) => {
+                let mut outcome = denied(previous, "DENY_AUTHORIZATION_POLICY", &error.to_string());
+                outcome.session_id = Some(session_id.clone());
+                outcome.protocol_profile_id = Some(rule.profile_id.clone());
+                outcome.protocol_profile_version = Some(rule.profile_version);
+                outcome.rule_id = Some(rule.rule_id.clone());
                 outcome.events.insert(0, proof_event);
                 return Ok(outcome);
             }
@@ -457,7 +562,7 @@ impl AccessEngine {
             &ProtocolClaims {
                 message_type: MessageType::AuthorizationGrant,
                 issuer: self.station.key_id().into(),
-                recipient: "transition-gate".into(),
+                recipient: self.chaser.key_id().into(),
                 issued_at_s: now_s,
                 nonce: random_nonce()?,
                 session_id: Some(session_id.clone()),
@@ -466,15 +571,25 @@ impl AccessEngine {
                 credentials: vec![],
                 grant_id: Some(grant_id.clone()),
                 expires_at_s: Some(expires_at_s),
-                policy_id: Some(rule.policy_id.clone()),
+                protocol_profile_id: Some(rule.profile_id.clone()),
+                protocol_profile_version: Some(rule.profile_version),
                 rule_id: Some(rule.rule_id.clone()),
+                authorization_policy_bundle_id: Some(
+                    authorization_decision.policy.bundle_id.clone(),
+                ),
+                authorization_policy_bundle_version: Some(
+                    authorization_decision.policy.bundle_version,
+                ),
+                authorization_policy_sha256: Some(
+                    authorization_decision.policy.policy_sha256.clone(),
+                ),
             },
             &self.station,
         )?;
         let grant = verify_envelope(
             &encoded,
             &self.gate_trust,
-            "transition-gate",
+            self.chaser.key_id(),
             &mut self.gate_replay,
             now_s,
             MAX_CLOCK_SKEW_S,
@@ -486,8 +601,15 @@ impl AccessEngine {
                 .claims
                 .expires_at_s
                 .is_none_or(|expiry| now_s > expiry)
-            || grant.claims.policy_id.as_deref() != Some(rule.policy_id.as_str())
+            || grant.claims.protocol_profile_id.as_deref() != Some(rule.profile_id.as_str())
+            || grant.claims.protocol_profile_version != Some(rule.profile_version)
             || grant.claims.rule_id.as_deref() != Some(rule.rule_id.as_str())
+            || grant.claims.authorization_policy_bundle_id.as_deref()
+                != Some(authorization_decision.policy.bundle_id.as_str())
+            || grant.claims.authorization_policy_bundle_version
+                != Some(authorization_decision.policy.bundle_version)
+            || grant.claims.authorization_policy_sha256.as_deref()
+                != Some(authorization_decision.policy.policy_sha256.as_str())
         {
             return Err(SessionError::GrantMismatch);
         }
@@ -504,13 +626,28 @@ impl AccessEngine {
             resulting_state: state_number(self.state),
             reason: "ALLOW_VERIFIED_ACCESS_GRANT".into(),
             session_id: Some(session_id.clone()),
-            policy_id: Some(rule.policy_id.clone()),
-            policy_version: Some(rule.policy_version),
+            protocol_profile_id: Some(rule.profile_id.clone()),
+            protocol_profile_version: Some(rule.profile_version),
             rule_id: Some(rule.rule_id.clone()),
             grant_id: Some(grant_id.clone()),
             entitlement_ttl_s: Some(rule.entitlement_ttl_s),
+            grant_expires_at_s: Some(expires_at_s),
+            signed_grant_hex: Some(hex::encode(&encoded)),
+            authorization_decision: Some(authorization_decision.clone()),
             events: vec![
                 proof_event,
+                event(
+                    "ACCESS_STAGE_POLICY_ALLOWED",
+                    &format!(
+                        "bundle={}@{}; rule={}",
+                        authorization_decision.policy.bundle_id,
+                        authorization_decision.policy.bundle_version,
+                        rule.rule_id
+                    ),
+                    Some(self.station.key_id()),
+                    Some(self.chaser.key_id()),
+                    Some("ACCESS_AUTHORIZATION"),
+                ),
                 event(
                     "AUTHORIZATION_GRANT_ISSUED",
                     &format!(
@@ -518,7 +655,7 @@ impl AccessEngine {
                         rule.rule_id, rule.entitlement_ttl_s
                     ),
                     Some(self.station.key_id()),
-                    Some("transition-gate"),
+                    Some(self.chaser.key_id()),
                     Some("AUTHORIZATION_GRANT"),
                 ),
                 event(
@@ -602,24 +739,16 @@ fn transition_names(state: DockingState, requested: u8) -> Option<(&'static str,
     }
 }
 
-fn policy_denied(previous: u8, error: PolicyError) -> TransitionOutcome {
+fn policy_denied(previous: u8, error: ProtocolProfileError) -> TransitionOutcome {
     let reason = match error {
-        PolicyError::PolicyExpired => "DENY_POLICY_EXPIRED",
-        PolicyError::TrustBundleMismatch => "DENY_TRUST_BUNDLE",
-        PolicyError::NoMatchingRule => "DENY_NO_MATCHING_POLICY",
-        PolicyError::CredentialRequired => "DENY_CREDENTIAL_REQUIRED",
-        PolicyError::HolderProofRequired => "DENY_HOLDER_PROOF",
-        PolicyError::SessionRequired => "DENY_SESSION_NOT_AUTHORIZED",
-        PolicyError::ReadinessStale => "DENY_READINESS_STALE",
-        PolicyError::ReadinessFailed(ref check) if check == "approach_corridor_clear" => {
-            "DENY_CORRIDOR_CONSTRAINT"
-        }
-        PolicyError::ReadinessFailed(ref check) if check == "latches_ready" => {
-            "DENY_LATCH_NOT_READY"
-        }
-        PolicyError::ReadinessFailed(_) => "DENY_READINESS_CHECK",
-        PolicyError::ConstraintFailed => "DENY_OPERATIONAL_CONSTRAINT",
-        PolicyError::InvalidTimestamp => "DENY_POLICY_INVALID",
+        ProtocolProfileError::ProfileExpired => "DENY_PROTOCOL_PROFILE_EXPIRED",
+        ProtocolProfileError::TrustBundleMismatch => "DENY_TRUST_BUNDLE",
+        ProtocolProfileError::NoMatchingRule => "DENY_NO_MATCHING_PROTOCOL_RULE",
+        ProtocolProfileError::CredentialRequired => "DENY_CREDENTIAL_REQUIRED",
+        ProtocolProfileError::HolderProofRequired => "DENY_HOLDER_PROOF",
+        ProtocolProfileError::SessionRequired => "DENY_SESSION_NOT_AUTHORIZED",
+        ProtocolProfileError::ReadinessStale => "DENY_READINESS_STALE",
+        ProtocolProfileError::InvalidTimestamp => "DENY_PROTOCOL_PROFILE_INVALID",
     };
     denied(previous, reason, &error.to_string())
 }
@@ -631,11 +760,14 @@ fn denied(previous: u8, reason: &str, detail: &str) -> TransitionOutcome {
         resulting_state: previous,
         reason: reason.into(),
         session_id: None,
-        policy_id: None,
-        policy_version: None,
+        protocol_profile_id: None,
+        protocol_profile_version: None,
         rule_id: None,
         grant_id: None,
         entitlement_ttl_s: None,
+        grant_expires_at_s: None,
+        signed_grant_hex: None,
+        authorization_decision: None,
         events: vec![event(reason, detail, None, None, None)],
     }
 }
@@ -683,9 +815,17 @@ mod tests {
             credential_trust,
             gate_trust,
             AccessEngineConfig {
-                policy: AuthorizationPolicy::from_json(include_bytes!(
-                    "../../../examples/authorization/commercial-docking.policy.json"
+                protocol_profile: ProtocolProfile::from_json(include_bytes!(
+                    "../../../config/access/access-protocol-profile.json"
                 ))
+                .unwrap(),
+                authorization_policy_engine: CedarPolicyEngine::from_source(
+                    "waystation-1-commercial-authorization",
+                    1,
+                    include_str!(
+                        "../../../examples/authorization/policies/commercial-docking.cedar"
+                    ),
+                )
                 .unwrap(),
                 trust_bundle_id: "waystation-1-trust".into(),
                 trust_bundle_version: 42,
@@ -777,7 +917,7 @@ mod tests {
             .insert("approach_corridor_clear".into(), false);
         let outcome = engine.request_transition(2, NOW_S + 2, &failed).unwrap();
         assert!(!outcome.approved);
-        assert_eq!(outcome.reason, "DENY_CORRIDOR_CONSTRAINT");
+        assert_eq!(outcome.reason, "DENY_AUTHORIZATION_POLICY");
         assert_eq!(outcome.resulting_state, 1);
     }
 
@@ -801,7 +941,7 @@ mod tests {
         failed.checks.insert("latches_ready".into(), false);
         let outcome = engine.request_transition(4, NOW_S + 4, &failed).unwrap();
         assert!(!outcome.approved);
-        assert_eq!(outcome.reason, "DENY_LATCH_NOT_READY");
+        assert_eq!(outcome.reason, "DENY_AUTHORIZATION_POLICY");
         assert_eq!(outcome.resulting_state, 3);
     }
 }

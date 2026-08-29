@@ -1,0 +1,74 @@
+{
+  "schema_version": "1.0",
+  "profile_id": "access-docking-protocol-v1",
+  "profile_version": 1,
+  "valid_from": "2026-01-01T00:00:00Z",
+  "valid_until": "2027-01-01T00:00:00Z",
+  "trust_bundle": {
+    "bundle_id": "waystation-1-trust",
+    "minimum_version": 42,
+    "maximum_age_s": 604800
+  },
+  "credential_profiles": [
+    {
+      "profile_id": "registered-vehicle-v1",
+      "credential_type": "VehicleRegistrationCredential",
+      "schema_id": "space:vehicle-registration:v1",
+      "issuer_groups": ["recognized-registrars"],
+      "maximum_status_age_s": 604800
+    },
+    {
+      "profile_id": "idss-compatible-v1",
+      "credential_type": "DockingCertificationCredential",
+      "schema_id": "space:docking-certification:v1",
+      "issuer_groups": ["recognized-docking-authorities"],
+      "maximum_status_age_s": 86400
+    }
+  ],
+  "stage_rules": [
+    {
+      "rule_id": "enter-approach",
+      "action": "enter_approach",
+      "from_stage": "hold",
+      "to_stage": "approach",
+      "holder_proof_required": true,
+      "required_session_status": "pending",
+      "maximum_proof_age_s": 60,
+      "readiness": { "maximum_age_ms": 1000 },
+      "entitlement_ttl_s": 60
+    },
+    {
+      "rule_id": "enter-final-approach",
+      "action": "enter_final_approach",
+      "from_stage": "approach",
+      "to_stage": "final_approach",
+      "holder_proof_required": true,
+      "required_session_status": "authorized",
+      "maximum_proof_age_s": 30,
+      "readiness": { "maximum_age_ms": 500 },
+      "entitlement_ttl_s": 30
+    },
+    {
+      "rule_id": "engage-soft-capture",
+      "action": "engage_soft_capture",
+      "from_stage": "final_approach",
+      "to_stage": "soft_capture",
+      "holder_proof_required": true,
+      "required_session_status": "authorized",
+      "maximum_proof_age_s": 30,
+      "readiness": { "maximum_age_ms": 250 },
+      "entitlement_ttl_s": 15
+    },
+    {
+      "rule_id": "engage-hard-dock",
+      "action": "engage_hard_dock",
+      "from_stage": "soft_capture",
+      "to_stage": "hard_dock",
+      "holder_proof_required": true,
+      "required_session_status": "authorized",
+      "maximum_proof_age_s": 15,
+      "readiness": { "maximum_age_ms": 100 },
+      "entitlement_ttl_s": 10
+    }
+  ]
+}

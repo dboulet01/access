@@ -16,7 +16,7 @@ const MIN_NONCE_BYTES: usize = 16;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageType {
-    IdentityRequest,
+    AccessRequest,
     SessionOffer,
     SessionProof,
     AuthorizationGrant,
@@ -51,9 +51,17 @@ pub struct ProtocolClaims {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at_s: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub policy_id: Option<String>,
+    pub protocol_profile_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol_profile_version: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rule_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_policy_bundle_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_policy_bundle_version: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization_policy_sha256: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -134,7 +142,7 @@ pub struct ReplayCache {
 }
 
 impl ReplayCache {
-    pub(crate) fn persistent(path: impl AsRef<Path>) -> Result<Self, ProtocolError> {
+    pub fn persistent(path: impl AsRef<Path>) -> Result<Self, ProtocolError> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -160,7 +168,7 @@ impl ReplayCache {
         })
     }
 
-    pub(crate) fn consume(&mut self, nonce: &[u8]) -> Result<(), ProtocolError> {
+    pub fn consume(&mut self, nonce: &[u8]) -> Result<(), ProtocolError> {
         if self.consumed.contains(nonce) {
             return Err(ProtocolError::Replay);
         }
@@ -384,7 +392,7 @@ mod tests {
 
     fn claims() -> ProtocolClaims {
         ProtocolClaims {
-            message_type: MessageType::IdentityRequest,
+            message_type: MessageType::AccessRequest,
             issuer: "chaser-1".into(),
             recipient: "target-1".into(),
             issued_at_s: 1_000,
@@ -395,8 +403,12 @@ mod tests {
             credentials: vec![],
             grant_id: None,
             expires_at_s: None,
-            policy_id: None,
+            protocol_profile_id: None,
+            protocol_profile_version: None,
             rule_id: None,
+            authorization_policy_bundle_id: None,
+            authorization_policy_bundle_version: None,
+            authorization_policy_sha256: None,
         }
     }
 

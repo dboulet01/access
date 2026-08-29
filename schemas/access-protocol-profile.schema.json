@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://access-space.example/schemas/access-protocol-profile.schema.json",
+  "title": "ACCESS protocol enforcement profile",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "profile_version",
+    "valid_from",
+    "valid_until",
+    "trust_bundle",
+    "credential_profiles",
+    "stage_rules"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "profile_id": { "$ref": "#/$defs/non_empty" },
+    "profile_version": { "type": "integer", "minimum": 1 },
+    "valid_from": { "$ref": "#/$defs/timestamp" },
+    "valid_until": { "$ref": "#/$defs/timestamp" },
+    "trust_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["bundle_id", "minimum_version", "maximum_age_s"],
+      "properties": {
+        "bundle_id": { "$ref": "#/$defs/non_empty" },
+        "minimum_version": { "type": "integer", "minimum": 1 },
+        "maximum_age_s": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "credential_profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["profile_id", "credential_type", "schema_id", "issuer_groups"],
+        "properties": {
+          "profile_id": { "$ref": "#/$defs/non_empty" },
+          "credential_type": { "$ref": "#/$defs/non_empty" },
+          "schema_id": { "$ref": "#/$defs/non_empty" },
+          "issuer_groups": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/non_empty" }
+          },
+          "maximum_status_age_s": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "stage_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "rule_id",
+          "action",
+          "from_stage",
+          "to_stage",
+          "holder_proof_required",
+          "required_session_status",
+          "readiness",
+          "entitlement_ttl_s"
+        ],
+        "properties": {
+          "rule_id": { "$ref": "#/$defs/non_empty" },
+          "action": { "$ref": "#/$defs/action" },
+          "from_stage": { "$ref": "#/$defs/stage" },
+          "to_stage": { "$ref": "#/$defs/stage" },
+          "holder_proof_required": { "type": "boolean" },
+          "required_session_status": { "enum": ["pending", "authorized"] },
+          "maximum_proof_age_s": { "type": "integer", "minimum": 0 },
+          "readiness": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["maximum_age_ms"],
+            "properties": {
+              "maximum_age_ms": { "type": "integer", "minimum": 0 }
+            }
+          },
+          "entitlement_ttl_s": { "type": "integer", "minimum": 1, "maximum": 300 }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "non_empty": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "stage": { "enum": ["hold", "approach", "final_approach", "soft_capture", "hard_dock", "servicing", "departure"] },
+    "action": { "enum": ["enter_approach", "enter_final_approach", "engage_soft_capture", "engage_hard_dock", "open_service_interface", "transfer_resource", "disconnect", "depart"] }
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "bundle_id": "waystation-1-commercial-authorization",
+  "bundle_version": 1,
+  "issued_at": "2026-08-29T00:00:00Z",
+  "valid_until": "2027-01-01T00:00:00Z",
+  "source_file": "examples/authorization/policies/commercial-docking.cedar"
+}

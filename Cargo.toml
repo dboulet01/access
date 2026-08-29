@@ -1,5 +1,5 @@
 [workspace]
-members = ["rust/docking_identity_core"]
+members = ["rust/access_core"]
 resolver = "2"
 
 [workspace.package]
@@ -8,6 +8,7 @@ license = "Apache-2.0"
 version = "0.1.0"
 
 [workspace.dependencies]
+cedar-policy = "4.12.0"
 ciborium = "0.2.2"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 coset = "0.4.2"
@@ -17,4 +18,5 @@ hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
 serde_json = "1.0"
+sha2 = "0.10"
 thiserror = "2.0"

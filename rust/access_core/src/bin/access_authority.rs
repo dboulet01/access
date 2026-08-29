@@ -5,16 +5,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command as ProcessCommand, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use docking_identity_core::{
-    AccessEngine, AccessEngineConfig, AccessScenario, AuthorizationPolicy, IdentityKey,
-    PayloadSigner, ReadinessEvidence, TransitionOutcome, TrustStore,
+use access_core::{
+    AccessEngine, AccessEngineConfig, AccessScenario, CedarPolicyEngine, IdentityKey,
+    PayloadSigner, ProtocolProfile, ReadinessEvidence, TransitionOutcome, TrustStore,
 };
 use ed25519_dalek::VerifyingKey;
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_IDENTITIES_PATH: &str = "config/access/simulation-identities.json";
 const DEFAULT_TRUST_PATH: &str = "config/access/simulation-trust-bundle.json";
-const DEFAULT_POLICY_PATH: &str = "examples/authorization/commercial-docking.policy.json";
+const DEFAULT_POLICY_PATH: &str = "config/access/access-protocol-profile.json";
+const DEFAULT_AUTHORIZATION_POLICY_BUNDLE_PATH: &str =
+    "config/access/access-authorization-policy-bundle.json";
 const DEFAULT_STATE_PATH: &str = "state/access-authority";
 
 type DynError = Box<dyn std::error::Error>;
@@ -65,6 +67,30 @@ struct TrustRecord {
     key_id: String,
     public_key_hex: String,
     scopes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct AuthorizationPolicyBundle {
+    bundle_id: String,
+    bundle_version: u64,
+    issued_at: String,
+    valid_until: String,
+    source_file: PathBuf,
+}
+
+impl AuthorizationPolicyBundle {
+    fn load(path: &Path, now_s: i64) -> Result<(Self, String), DynError> {
+        let bundle: Self = serde_json::from_slice(&fs::read(path)?)?;
+        let issued_at = chrono::DateTime::parse_from_rfc3339(&bundle.issued_at)?.timestamp();
+        let valid_until = chrono::DateTime::parse_from_rfc3339(&bundle.valid_until)?.timestamp();
+        if now_s < issued_at || now_s > valid_until {
+            return Err(
+                "ACCESS authorization policy bundle is outside its validity interval".into(),
+            );
+        }
+        let source = fs::read_to_string(&bundle.source_file)?;
+        Ok((bundle, source))
+    }
 }
 
 impl TrustBundle {
@@ -152,6 +178,7 @@ struct Response<T: Serialize> {
 }
 
 fn main() -> Result<(), DynError> {
+    let now_s = unix_time();
     let identity_path = env_path("ACCESS_IDENTITIES_FILE", DEFAULT_IDENTITIES_PATH);
     let signer_command = env::var_os("ACCESS_SIGNER_COMMAND")
         .map(PathBuf::from)
@@ -159,8 +186,19 @@ fn main() -> Result<(), DynError> {
 
     let trust_path = env_path("ACCESS_TRUST_BUNDLE_FILE", DEFAULT_TRUST_PATH);
     let trust = TrustBundle::load(&trust_path)?;
-    let policy_path = env_path("ACCESS_POLICY_FILE", DEFAULT_POLICY_PATH);
-    let policy = AuthorizationPolicy::from_json(&fs::read(policy_path)?)?;
+    let policy_path = env_path("ACCESS_PROTOCOL_PROFILE_FILE", DEFAULT_POLICY_PATH);
+    let protocol_profile = ProtocolProfile::from_json(&fs::read(policy_path)?)?;
+    let authorization_policy_bundle_path = env_path(
+        "ACCESS_AUTHORIZATION_POLICY_BUNDLE_FILE",
+        DEFAULT_AUTHORIZATION_POLICY_BUNDLE_PATH,
+    );
+    let (authorization_policy_bundle, authorization_policy_source) =
+        AuthorizationPolicyBundle::load(&authorization_policy_bundle_path, now_s)?;
+    let authorization_policy_engine = CedarPolicyEngine::from_source(
+        authorization_policy_bundle.bundle_id,
+        authorization_policy_bundle.bundle_version,
+        &authorization_policy_source,
+    )?;
     let trust_bundle_issued_at_s =
         chrono::DateTime::parse_from_rfc3339(&trust.issued_at)?.timestamp();
     let mut engine = AccessEngine::new(
@@ -177,7 +215,8 @@ fn main() -> Result<(), DynError> {
         trust.store_for("credential_issuer")?,
         trust.store_for("transition_gate")?,
         AccessEngineConfig {
-            policy,
+            protocol_profile,
+            authorization_policy_engine,
             trust_bundle_id: trust.bundle_id.clone(),
             trust_bundle_version: trust.version,
             trust_bundle_issued_at_s,
@@ -203,7 +242,17 @@ fn handle_command(engine: &mut AccessEngine, input: &str) -> Response<serde_json
     let result = (|| -> Result<serde_json::Value, DynError> {
         let command: Command = serde_json::from_str(input)?;
         match command {
-            Command::Describe => Ok(serde_json::to_value(engine.policy())?),
+            Command::Describe => {
+                let mut description = serde_json::to_value(engine.protocol_profile())?;
+                description
+                    .as_object_mut()
+                    .ok_or("protocol profile description must be an object")?
+                    .insert(
+                        "authorization_policy".into(),
+                        serde_json::to_value(engine.authorization_policy())?,
+                    );
+                Ok(description)
+            }
             Command::Establish { scenario, now_s } => {
                 let scenario = parse_scenario(&scenario)?;
                 Ok(serde_json::to_value(engine.establish_session(
