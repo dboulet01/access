@@ -27,9 +27,8 @@ let replaySignature = "";
 let replayMode = false;
 let replayTimer = null;
 let latestLiveSnapshot = null;
-let displayedMessageKey = "";
-let messageTimer = null;
 let awaitingReset = false;
+const expandedEvidenceRows = new Set();
 
 function shortId(value) {
   if (!value || value === "pending") return value;
@@ -38,6 +37,10 @@ function shortId(value) {
 
 function eventMetadata(event) {
   const values = [];
+  if (event.event_sequence) values.push(`event #${event.event_sequence}`);
+  if (event.observed_at_ms) values.push(`t+${event.observed_at_ms}ms`);
+  if (event.protocol_version) values.push(`protocol v${event.protocol_version}`);
+  if (Array.isArray(event.protocol_shape)) values.push(`fields ${event.protocol_shape.length}`);
   if (event.session_id) values.push(`session ${shortId(event.session_id)}`);
   if (event.policy_id) values.push(`${event.policy_id} v${event.policy_version}`);
   if (event.rule_id) values.push(`rule ${event.rule_id}`);
@@ -46,9 +49,18 @@ function eventMetadata(event) {
   return values;
 }
 
+function isProtocolMessage(event) {
+  return event.kind === "message" && event.from && event.to && event.message_type;
+}
+
 function policyRows(auth) {
   const assessment = auth.policy_assessments?.at(-1);
-  if (assessment) return assessment.rows;
+  if (assessment) {
+    return assessment.rows.map((row) => ({
+      ...row,
+      status: row.passed ? "complete" : "failed",
+    }));
+  }
   const policy = auth.policy;
   if (!policy) return [];
   const trustBundle = policy.trust_bundle;
@@ -60,6 +72,7 @@ function policyRows(auth) {
       requirement: `${policy.valid_from} through ${policy.valid_until}`,
       observed: "loaded by authority",
       passed: true,
+      status: "complete",
     },
     {
       control: "Trust bundle",
@@ -68,20 +81,50 @@ function policyRows(auth) {
         : "not specified",
       observed: auth.trust_bundle,
       passed: Boolean(trustBundle),
+      status: Boolean(trustBundle) ? "complete" : "failed",
     },
     {
       control: "Credential profiles",
       requirement: credentialProfiles.map((profile) => profile.profile_id).join(", ") || "not specified",
       observed: auth.phase === "SESSION_AUTHORIZED" ? "verified" : "awaiting session",
       passed: auth.phase === "SESSION_AUTHORIZED",
+      status: auth.phase === "SESSION_AUTHORIZED" ? "complete" : "pending",
     },
     {
       control: "Stage rules",
       requirement: `${stagePolicies.length} transition rules; default deny`,
       observed: "awaiting transition evidence",
       passed: true,
+      status: "pending",
     },
   ];
+}
+
+function statusText(status) {
+  if (status === "complete") return "Complete";
+  if (status === "failed") return "Failed";
+  return "Pending";
+}
+
+function conciseMessageDetail(event) {
+  const summary = event.summary || event.detail;
+  return summary;
+}
+
+function stickyScrollState(node) {
+  const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
+  return {
+    stickToBottom: distanceFromBottom < 14,
+    previousTop: node.scrollTop,
+  };
+}
+
+function applyStickyScrollState(node, state) {
+  if (state.stickToBottom) {
+    node.scrollTop = node.scrollHeight;
+    return;
+  }
+  node.scrollTop = Math.min(state.previousTop, Math.max(0, node.scrollHeight - node.clientHeight));
 }
 
 function setText(selector, value) {
@@ -108,33 +151,33 @@ function bindCraftConfig(craft, panel) {
 }
 
 function showViewportMessage(auth) {
-  const messages = auth.events.filter((event) => event.kind === "message");
-  const message = messages.at(-1);
-  if (!message) {
-    chaserMessageNode.classList.remove("active");
-    chaserMessageNode.classList.remove("denied");
-    stationMessageNode.classList.remove("active");
-    stationMessageNode.classList.remove("denied");
-    displayedMessageKey = "";
-    return;
-  }
-  const key = `${messages.length}:${message.message_type}:${message.detail}`;
-  if (key === displayedMessageKey && !replayMode) return;
-  displayedMessageKey = key;
-  const node = message.from === "ODYSSEY-7" ? chaserMessageNode : stationMessageNode;
-  const otherNode = node === chaserMessageNode ? stationMessageNode : chaserMessageNode;
-  otherNode.classList.remove("active");
-  otherNode.classList.remove("denied");
-  node.querySelector("span").textContent = `${message.from} → ${message.to}`;
-  node.querySelector("strong").textContent = message.message_type;
-  const metadata = eventMetadata(message);
-  node.querySelector("p").textContent = metadata.length
-    ? `${message.summary || message.detail} · ${metadata.join(" · ")}`
-    : message.summary || message.detail;
-  node.classList.toggle("denied", message.code?.startsWith("DENY_") ?? false);
-  node.classList.add("active");
-  clearTimeout(messageTimer);
-  if (!replayMode) messageTimer = setTimeout(() => node.classList.remove("active"), 6000);
+  const messages = auth.events.filter(isProtocolMessage);
+
+  const latestBySender = (sender) => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].from === sender) return messages[i];
+    }
+    return null;
+  };
+
+  const renderBubble = (node, message) => {
+    if (!message) {
+      node.classList.remove("active");
+      node.classList.remove("denied");
+      return;
+    }
+    node.querySelector("span").textContent = `${message.from} → ${message.to}`;
+    node.querySelector("strong").textContent = message.message_type;
+    const metadata = eventMetadata(message);
+    node.querySelector("p").textContent = metadata.length
+      ? `${message.summary || message.detail} · ${metadata.join(" · ")}`
+      : message.summary || message.detail;
+    node.classList.toggle("denied", message.code?.startsWith("DENY_") ?? false);
+    node.classList.add("active");
+  };
+
+  renderBubble(chaserMessageNode, latestBySender("ODYSSEY-7"));
+  renderBubble(stationMessageNode, latestBySender("WAYSTATION-1"));
 }
 
 function renderAuthorization(auth, simulation) {
@@ -144,14 +187,27 @@ function renderAuthorization(auth, simulation) {
   policyIdNode.textContent = latestAssessment
     ? `${auth.policy_id} v${auth.policy_version} · ${latestAssessment.rule_id} · ${latestAssessment.reason}`
     : `${auth.policy_id} v${auth.policy_version ?? "-"} · ${auth.trust_bundle}`;
-  const assessmentRows = policyRows(auth).map(({ control, requirement, observed, passed }) => {
+  const assessmentRows = policyRows(auth).map(({ control, requirement, observed, passed, status }) => {
+    const resolvedStatus = status || (passed ? "complete" : String(observed).toLowerCase().includes("awaiting") ? "pending" : "failed");
     const row = document.createElement("div");
-    row.className = `policy-check${passed ? "" : " failed"}`;
-    [control, requirement, observed].forEach((text) => {
-      const cell = document.createElement("span");
-      cell.textContent = text;
-      row.append(cell);
-    });
+    row.className = `policy-check ${resolvedStatus}`;
+
+    const statusCell = document.createElement("span");
+    statusCell.className = "policy-status";
+    statusCell.textContent = statusText(resolvedStatus);
+
+    const controlCell = document.createElement("span");
+    controlCell.className = "policy-control";
+    controlCell.textContent = control;
+
+    const requirementCell = document.createElement("span");
+    requirementCell.textContent = requirement;
+
+    const observedCell = document.createElement("span");
+    observedCell.className = "policy-observed";
+    observedCell.textContent = observed;
+
+    row.append(statusCell, controlCell, requirementCell, observedCell);
     return row;
   });
   policyChecksNode.replaceChildren(...(assessmentRows.length
@@ -183,7 +239,6 @@ function renderAuthorization(auth, simulation) {
   setText("#critical-title", allComplete ? "All docking gates authorized" : criticalTitle);
   setText("#critical-detail", allComplete ? `Four stage entitlements consumed; ${simulation.state} at ${Number(simulation.range_m).toFixed(3)} m.` : criticalDetail);
 
-  const localEvents = auth.events.filter((event) => event.kind !== "message");
   const deniedEvent = auth.events.findLast((event) => event.code?.startsWith("DENY_"));
   if (deniedEvent) {
     setText("#critical-status", "DENIED");
@@ -191,33 +246,69 @@ function renderAuthorization(auth, simulation) {
     setText("#critical-detail", deniedEvent.summary || deniedEvent.detail);
   }
   document.querySelector(".critical-gate").classList.toggle("denied", Boolean(deniedEvent));
-  const authRows = localEvents.length
-    ? localEvents.slice().reverse().map((event) => {
-        const row = document.createElement("p");
+  const authRows = auth.events.length
+    ? auth.events
+        .map((event, index) => ({ event, index }))
+        .reverse()
+        .map(({ event, index }) => {
+        const eventKey = `${index}:${event.code}:${event.detail}`;
+        const row = document.createElement("details");
         row.className = "auth-event";
-        const code = document.createElement("code");
+        row.classList.toggle("denied", event.code?.startsWith("DENY_") ?? false);
+        row.open = expandedEvidenceRows.has(eventKey);
+        row.addEventListener("toggle", () => {
+          if (row.open) expandedEvidenceRows.add(eventKey);
+          else expandedEvidenceRows.delete(eventKey);
+        });
+
+        const summary = document.createElement("summary");
+
+        const kind = document.createElement("span");
+        kind.className = "auth-kind";
+        kind.textContent = event.kind || "event";
+
+        const code = document.createElement("span");
+        code.className = "auth-code";
         code.textContent = event.code;
-        const detail = document.createElement("span");
-        detail.textContent = event.detail;
-        row.append(code, detail);
+
+        const brief = document.createElement("span");
+        brief.className = "auth-summary";
+        brief.textContent = conciseMessageDetail(event);
+
+        summary.append(kind, code, brief);
+
+        const verbose = document.createElement("pre");
+        verbose.textContent = JSON.stringify(event, null, 2);
+        row.append(summary, verbose);
         return row;
       })
     : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for local checks" })];
   authEventsNode.replaceChildren(...authRows);
 
-  const messages = auth.events.filter((event) => event.kind === "message");
+  const messages = auth.events.filter(isProtocolMessage);
+  const protocolScroll = stickyScrollState(protocolMessagesNode);
   const messageRows = messages.length
     ? messages.map((event) => {
         const row = document.createElement("article");
         row.className = `protocol-message ${event.from === "ODYSSEY-7" ? "from-chaser" : "from-station"}`;
         row.classList.toggle("denied", event.code?.startsWith("DENY_") ?? false);
+
+        const header = document.createElement("div");
+        header.className = "message-header";
+
         const route = document.createElement("div");
         route.className = "message-route";
         route.textContent = `${event.from}  →  ${event.to}`;
-        const type = document.createElement("strong");
+
+        const type = document.createElement("span");
+        type.className = "message-type";
         type.textContent = event.message_type;
+
+        header.append(route, type);
+
         const detail = document.createElement("p");
-        detail.textContent = event.detail;
+        detail.textContent = conciseMessageDetail(event);
+
         const metadata = document.createElement("div");
         metadata.className = "message-metadata";
         eventMetadata(event).forEach((value) => {
@@ -225,12 +316,12 @@ function renderAuthorization(auth, simulation) {
           chip.textContent = value;
           metadata.append(chip);
         });
-        row.append(route, type, detail, metadata);
+        row.append(header, detail, metadata);
         return row;
       })
     : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for encounter traffic" })];
   protocolMessagesNode.replaceChildren(...messageRows);
-  protocolMessagesNode.scrollTop = protocolMessagesNode.scrollHeight;
+  applyStickyScrollState(protocolMessagesNode, protocolScroll);
   showViewportMessage(auth);
 
   const entitlementRows = auth.entitlements.length
