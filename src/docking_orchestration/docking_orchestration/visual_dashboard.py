@@ -179,11 +179,8 @@ class VisualDashboard(Node):
             self._on_authorization,
             authorization_qos,
         )
-        self._reset_publisher = self.create_publisher(Empty, "/docking/reset", 10)
+        self._run_publisher = self.create_publisher(String, "/docking/run", 10)
         self._prepare_publisher = self.create_publisher(Empty, "/docking/prepare", 10)
-        self._scenario_publisher = self.create_publisher(
-            String, "/authorization/scenario", 10
-        )
         self.create_timer(0.05, self._publish_requested_reset)
 
         web_root = Path(get_package_share_directory("docking_orchestration")) / "web"
@@ -205,8 +202,7 @@ class VisualDashboard(Node):
         self._state.rerun_requested.clear()
         scenario = String()
         scenario.data = self._state.requested_scenario
-        self._scenario_publisher.publish(scenario)
-        self._reset_publisher.publish(Empty())
+        self._run_publisher.publish(scenario)
         self.get_logger().info(
             f"published simulation reset command: scenario={scenario.data}"
         )
@@ -216,14 +212,17 @@ class VisualDashboard(Node):
 
     def _on_request(self, request):
         requested = STATE_NAME.get(request.requested_state, str(request.requested_state))
-        self._state.add_event("request", f"Requested {requested}")
+        self._state.add_event(
+            "request",
+            f"{request.requester} requested {requested}: {request.reason}",
+        )
 
     def _on_decision(self, decision):
         resulting = STATE_NAME.get(decision.resulting_state, str(decision.resulting_state))
         outcome = "Approved" if decision.approved else "Denied"
         self._state.add_event(
             "approved" if decision.approved else "denied",
-            f"{outcome} by {decision.authority}: {resulting}",
+            f"{outcome} by {decision.authority}: {resulting} ({decision.reason})",
         )
 
     def _on_authorization(self, message):

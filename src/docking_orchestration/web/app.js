@@ -31,40 +31,58 @@ let displayedMessageKey = "";
 let messageTimer = null;
 let awaitingReset = false;
 
-const POLICY_CHECKS = {
-  nominal: [
-    ["Credential validity", "active at verifier time; status current", "active / status current"],
-    ["Holder proof", "EdDSA; challenge and audience bound; age < 30s", "Ed25519 / 184ms"],
-    ["Session scope", "aud=port-3; dock + methane_refuel; TTL <= 300s", "port-3 / 300s"],
-    ["Initial hold", "corridor clear; closing rate <= 0.20m/s", "clear / 0.000m/s"],
-    ["Capture readiness", "alignment <= 0.25deg; latches ready 12/12", "0.08deg / 12 of 12"],
-    ["Entitlement", "single use; audience bound; replay protected", "30s stage TTL / consumed"],
-  ],
-  expired_credential: [
-    ["Credential validity", "active at verifier time; clock skew <= 120s", "expired 16h 32m / DENY"],
-    ["Issuer trust", "approved registration issuer in bundle v42", "Lunar Logistics / trusted"],
-    ["Holder proof", "EdDSA; challenge and audience bound; age < 30s", "Ed25519 / 184ms"],
-    ["Session scope", "aud=port-3; dock + methane_refuel", "not issued"],
-    ["Approach release", "all identity controls must pass", "blocked at HOLD"],
-    ["Entitlement", "never issue after a failed prerequisite", "none issued"],
-  ],
-  corridor_violation: [
-    ["Credential validity", "active at verifier time; status current", "active / status current"],
-    ["Session scope", "aud=port-3; dock + methane_refuel; TTL <= 300s", "port-3 / active"],
-    ["Approach corridor", "cross-track <= 0.20m", "0.42m / DENY"],
-    ["Closing rate", "relative closing rate <= 0.20m/s", "0.18m/s / pass"],
-    ["Final approach", "corridor and rate controls must both pass", "blocked at 1.120m"],
-    ["Entitlement", "single use; audience bound; replay protected", "approach consumed / final absent"],
-  ],
-  latch_not_ready: [
-    ["Credential + session", "valid identity; aud=port-3; active scope", "verified / active"],
-    ["Soft capture", "capture ring engaged; relative rate stable", "engaged / 0.008m/s"],
-    ["Latch quorum", "ready latches = 12/12", "10/12 / DENY"],
-    ["Ring load", "load within IDSS capture envelope", "3.8kN / pass"],
-    ["Hard dock", "latch quorum and motion controls must pass", "blocked at 0.040m"],
-    ["Entitlement", "10s; single use; audience bound", "hard-dock entitlement absent"],
-  ],
-};
+function shortId(value) {
+  if (!value || value === "pending") return value;
+  return value.length > 24 ? `${value.slice(0, 12)}…${value.slice(-8)}` : value;
+}
+
+function eventMetadata(event) {
+  const values = [];
+  if (event.session_id) values.push(`session ${shortId(event.session_id)}`);
+  if (event.policy_id) values.push(`${event.policy_id} v${event.policy_version}`);
+  if (event.rule_id) values.push(`rule ${event.rule_id}`);
+  if (event.grant_id) values.push(`grant ${shortId(event.grant_id)}`);
+  if (event.entitlement_ttl_s) values.push(`TTL ${event.entitlement_ttl_s}s`);
+  return values;
+}
+
+function policyRows(auth) {
+  const assessment = auth.policy_assessments?.at(-1);
+  if (assessment) return assessment.rows;
+  const policy = auth.policy;
+  if (!policy) return [];
+  const trustBundle = policy.trust_bundle;
+  const credentialProfiles = policy.credential_profiles ?? [];
+  const stagePolicies = policy.stage_policies ?? [];
+  return [
+    {
+      control: "Policy validity",
+      requirement: `${policy.valid_from} through ${policy.valid_until}`,
+      observed: "loaded by authority",
+      passed: true,
+    },
+    {
+      control: "Trust bundle",
+      requirement: trustBundle
+        ? `${trustBundle.bundle_id ?? "unspecified"} v${trustBundle.minimum_version ?? "-"}+`
+        : "not specified",
+      observed: auth.trust_bundle,
+      passed: Boolean(trustBundle),
+    },
+    {
+      control: "Credential profiles",
+      requirement: credentialProfiles.map((profile) => profile.profile_id).join(", ") || "not specified",
+      observed: auth.phase === "SESSION_AUTHORIZED" ? "verified" : "awaiting session",
+      passed: auth.phase === "SESSION_AUTHORIZED",
+    },
+    {
+      control: "Stage rules",
+      requirement: `${stagePolicies.length} transition rules; default deny`,
+      observed: "awaiting transition evidence",
+      passed: true,
+    },
+  ];
+}
 
 function setText(selector, value) {
   document.querySelector(selector).textContent = value;
@@ -107,9 +125,13 @@ function showViewportMessage(auth) {
   const otherNode = node === chaserMessageNode ? stationMessageNode : chaserMessageNode;
   otherNode.classList.remove("active");
   otherNode.classList.remove("denied");
+  node.querySelector("span").textContent = `${message.from} → ${message.to}`;
   node.querySelector("strong").textContent = message.message_type;
-  node.querySelector("p").textContent = message.detail;
-  node.classList.toggle("denied", message.code.startsWith("DENY_"));
+  const metadata = eventMetadata(message);
+  node.querySelector("p").textContent = metadata.length
+    ? `${message.summary || message.detail} · ${metadata.join(" · ")}`
+    : message.summary || message.detail;
+  node.classList.toggle("denied", message.code?.startsWith("DENY_") ?? false);
   node.classList.add("active");
   clearTimeout(messageTimer);
   if (!replayMode) messageTimer = setTimeout(() => node.classList.remove("active"), 6000);
@@ -118,18 +140,23 @@ function showViewportMessage(auth) {
 function renderAuthorization(auth, simulation) {
   setText("#auth-scenario", auth.scenario);
   setText("#auth-mode", auth.mode);
-  policyIdNode.textContent = `${auth.policy_id} · ${auth.trust_bundle}`;
-  const policyRows = (POLICY_CHECKS[auth.scenario_id] || POLICY_CHECKS.nominal).map(([control, requirement, value]) => {
+  const latestAssessment = auth.policy_assessments?.at(-1);
+  policyIdNode.textContent = latestAssessment
+    ? `${auth.policy_id} v${auth.policy_version} · ${latestAssessment.rule_id} · ${latestAssessment.reason}`
+    : `${auth.policy_id} v${auth.policy_version ?? "-"} · ${auth.trust_bundle}`;
+  const assessmentRows = policyRows(auth).map(({ control, requirement, observed, passed }) => {
     const row = document.createElement("div");
-    row.className = `policy-check${value.includes("DENY") ? " failed" : ""}`;
-    [control, requirement, value].forEach((text) => {
+    row.className = `policy-check${passed ? "" : " failed"}`;
+    [control, requirement, observed].forEach((text) => {
       const cell = document.createElement("span");
       cell.textContent = text;
       row.append(cell);
     });
     return row;
   });
-  policyChecksNode.replaceChildren(...policyRows);
+  policyChecksNode.replaceChildren(...(assessmentRows.length
+    ? assessmentRows
+    : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for authority policy" })]));
 
   const completed = new Set(auth.completed_steps);
   const issuedActions = new Set(auth.entitlements.map((entitlement) => entitlement.action));
@@ -183,7 +210,7 @@ function renderAuthorization(auth, simulation) {
     ? messages.map((event) => {
         const row = document.createElement("article");
         row.className = `protocol-message ${event.from === "ODYSSEY-7" ? "from-chaser" : "from-station"}`;
-        row.classList.toggle("denied", event.code.startsWith("DENY_"));
+        row.classList.toggle("denied", event.code?.startsWith("DENY_") ?? false);
         const route = document.createElement("div");
         route.className = "message-route";
         route.textContent = `${event.from}  →  ${event.to}`;
@@ -191,7 +218,14 @@ function renderAuthorization(auth, simulation) {
         type.textContent = event.message_type;
         const detail = document.createElement("p");
         detail.textContent = event.detail;
-        row.append(route, type, detail);
+        const metadata = document.createElement("div");
+        metadata.className = "message-metadata";
+        eventMetadata(event).forEach((value) => {
+          const chip = document.createElement("span");
+          chip.textContent = value;
+          metadata.append(chip);
+        });
+        row.append(route, type, detail, metadata);
         return row;
       })
     : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for encounter traffic" })];
@@ -203,10 +237,11 @@ function renderAuthorization(auth, simulation) {
     ? auth.entitlements.slice().reverse().map((entitlement) => {
         const row = document.createElement("div");
         row.className = "entitlement-row";
-        [entitlement.action, entitlement.stage, `${entitlement.ttl_s}s`, entitlement.status].forEach((value, index) => {
+        [entitlement.action, entitlement.rule_id, entitlement.stage, `${entitlement.ttl_s}s`, entitlement.status].forEach((value, index) => {
           const cell = document.createElement("span");
           cell.textContent = value;
-          if (index === 3) cell.className = entitlement.status;
+          if (index === 4) cell.className = entitlement.status;
+          if (index === 0) cell.title = entitlement.id;
           row.append(cell);
         });
         return row;
