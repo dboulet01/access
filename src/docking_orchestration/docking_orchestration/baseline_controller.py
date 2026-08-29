@@ -6,15 +6,23 @@ from geometry_msgs.msg import Pose
 from rclpy.node import Node
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import SetEntityPose
-from std_msgs.msg import Empty
+from std_msgs.msg import Empty, String
 
 
 GOAL_X = {
     DockingStatus.HOLD: -5.0,
-    DockingStatus.APPROACH: -2.8,
-    DockingStatus.FINAL_APPROACH: -2.0,
-    DockingStatus.SOFT_CAPTURE: -1.72,
+    DockingStatus.APPROACH: -2.79,
+    DockingStatus.FINAL_APPROACH: -1.99,
+    DockingStatus.SOFT_CAPTURE: -1.71,
     DockingStatus.HARD_DOCK: -1.68,
+}
+
+MAX_STAGE_SPEED_MPS = {
+    DockingStatus.HOLD: 0.0,
+    DockingStatus.APPROACH: 0.18,
+    DockingStatus.FINAL_APPROACH: 0.08,
+    DockingStatus.SOFT_CAPTURE: 0.02,
+    DockingStatus.HARD_DOCK: 0.01,
 }
 
 NEXT_STATE = {
@@ -42,7 +50,7 @@ class BaselineController(Node):
         self.declare_parameter("approach_speed_mps", 0.6)
         self.declare_parameter("restart_delay_s", 3.0)
         self.declare_parameter("initial_delay_s", 0.0)
-        self.declare_parameter("decision_timeout_s", 1.0)
+        self.declare_parameter("decision_timeout_s", 5.0)
         self._rate = self.get_parameter("update_rate_hz").value
         self._speed = self.get_parameter("approach_speed_mps").value
         self._restart_delay_s = self.get_parameter("restart_delay_s").value
@@ -76,6 +84,7 @@ class BaselineController(Node):
         )
         self.create_subscription(Empty, "/docking/reset", self._on_reset, 10)
         self.create_subscription(Empty, "/docking/prepare", self._on_prepare, 10)
+        self.create_subscription(String, "/docking/run", self._on_reset, 10)
         self._pose_client = self.create_client(
             SetEntityPose, "/world/docking/set_pose"
         )
@@ -170,7 +179,8 @@ class BaselineController(Node):
             return
 
         goal = GOAL_X[self._state]
-        step = self._speed / self._rate
+        stage_speed = min(self._speed, MAX_STAGE_SPEED_MPS[self._state])
+        step = stage_speed / self._rate
         next_x = self._x + math.copysign(min(abs(goal - self._x), step), goal - self._x)
         request = SetEntityPose.Request()
         request.entity = Entity(name="chaser", type=Entity.MODEL)
@@ -193,8 +203,10 @@ class BaselineController(Node):
         if self._pending and self._request_time is not None:
             elapsed = (self.get_clock().now() - self._request_time).nanoseconds / 1e9
             if elapsed > self._decision_timeout_s:
+                self._halted = True
                 self._pending = False
                 self._request_time = None
+                self.get_logger().error("transition authority response timed out; halted")
 
         goal = GOAL_X[self._state]
         self._advance_pose()

@@ -11,6 +11,8 @@ x-visual-simulation: &visual-simulation
   ipc: host
   stdin_open: true
   tty: true
+  volumes:
+    - visual-1-state:/workspace/state
 
 services:
   docking-sim:
@@ -30,6 +32,8 @@ services:
     ipc: host
     stdin_open: true
     tty: true
+    volumes:
+      - baseline-state:/workspace/state
 
   docking-visual-1:
     <<: *visual-simulation
@@ -44,6 +48,8 @@ services:
       IGN_PARTITION: docking_visual_2
       ROS_DOMAIN_ID: "44"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    volumes:
+      - visual-2-state:/workspace/state
 
   docking-visual-3:
     <<: *visual-simulation
@@ -51,6 +57,8 @@ services:
       IGN_PARTITION: docking_visual_3
       ROS_DOMAIN_ID: "45"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
+    volumes:
+      - visual-3-state:/workspace/state
 
   docking-gateway:
     build:
@@ -86,3 +94,9 @@ services:
       - docking-gateway
     ports:
       - "127.0.0.1:4040:4040"
+
+volumes:
+  baseline-state:
+  visual-1-state:
+  visual-2-state:
+  visual-3-state:

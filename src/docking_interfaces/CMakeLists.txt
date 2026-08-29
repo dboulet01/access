@@ -7,6 +7,7 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/DockingStatus.msg"
+  "msg/ReadinessEvidence.msg"
   "msg/TransitionDecision.msg"
   "msg/TransitionRequest.msg"
   DEPENDENCIES builtin_interfaces

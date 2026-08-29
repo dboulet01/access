@@ -22,7 +22,12 @@ def generate_launch_description():
     )
     gate = Node(
         package="docking_orchestration",
-        executable="mock_authorization",
+        executable="access_authorization",
+        output="screen",
+    )
+    readiness = Node(
+        package="docking_orchestration",
+        executable="readiness_monitor",
         output="screen",
     )
     controller = Node(
@@ -56,6 +61,7 @@ def generate_launch_description():
             gazebo,
             bridge,
             gate,
+            readiness,
             dashboard,
             activity_logger,
             controller,

@@ -1,3 +1,10 @@
+FROM rust:1.89-bullseye AS rust-builder
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY rust ./rust
+RUN cargo build --locked --release --bin access-authority --bin access-signer
+
 FROM ros:humble-ros-base-jammy
 
 SHELL ["/bin/bash", "-c"]
@@ -12,6 +19,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /workspace
 COPY src /workspace/src
+COPY config /workspace/config
+COPY examples /workspace/examples
+COPY --from=rust-builder /build/target/release/access-authority /usr/local/bin/access-authority
+COPY --from=rust-builder /build/target/release/access-signer /usr/local/bin/access-signer
 
 RUN source /opt/ros/humble/setup.bash \
     && colcon build --symlink-install \

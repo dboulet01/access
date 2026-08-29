@@ -23,10 +23,12 @@ setup(
     entry_points={
         "console_scripts": [
             "activity_logger = docking_orchestration.activity_logger:main",
+            "access_authorization = docking_orchestration.access_authorization:main",
             "baseline_controller = docking_orchestration.baseline_controller:main",
             "development_gate = docking_orchestration.development_gate:main",
             "docking_monitor = docking_orchestration.docking_monitor:main",
             "mock_authorization = docking_orchestration.mock_authorization:main",
+            "readiness_monitor = docking_orchestration.readiness_monitor:main",
             "session_gateway = docking_orchestration.session_gateway:main",
             "visual_dashboard = docking_orchestration.visual_dashboard:main",
         ],

@@ -1,0 +1,13 @@
+builtin_interfaces/Time stamp
+float64 range_m
+float64 closing_rate_mps
+bool initial_hold_confirmed
+bool retreat_available
+bool relative_navigation_valid
+bool approach_corridor_clear
+bool closing_rate_within_limit
+bool alignment_within_limit
+bool capture_system_ready
+bool soft_capture_confirmed
+bool latches_ready
+bool relative_motion_stable
