@@ -33,12 +33,14 @@ SCENARIOS = {
 }
 
 EVENT_SUMMARY = {
-    "IDENTITY_REQUEST_VERIFIED": "Signed vehicle identity request verified",
+    "ACCESS_REQUEST_VERIFIED": "Signed ACCESS request verified",
     "SESSION_OFFER_VERIFIED": "Station challenge bound to the ACCESS session",
     "CREDENTIAL_ISSUED": "Registration and docking credentials issued",
     "CREDENTIALS_VERIFIED": "Credential signatures, validity, and holder binding verified",
     "HOLDER_PROOF_VERIFIED": "Vehicle proved control of its credential key",
     "HOLDER_PROOF_REFRESHED": "Fresh holder proof verified for this transition",
+    "ACCESS_INITIAL_CLAIMS_ALLOWED": "ACCESS policy authorized the verified initial claims",
+    "ACCESS_STAGE_POLICY_ALLOWED": "ACCESS policy authorized the requested use-case transition",
     "SESSION_AUTHORIZED": "Authenticated ACCESS session authorized",
     "AUTHORIZATION_GRANT_ISSUED": "Stage-scoped authorization grant issued",
     "AUTHORIZATION_GRANT_CONSUMED": "Single-use grant verified and consumed",
@@ -60,17 +62,17 @@ class StationAccess(Node):
         self._entitlements = []
         self._completed_steps = []
         self._session_id = None
-        self._policy_id = None
-        self._policy_version = None
-        self._policy = None
-        self._policy_assessments = []
+        self._protocol_profile_id = None
+        self._protocol_profile_version = None
+        self._protocol_profile = None
+        self._authorization_assessments = []
         self._session_ready = False
         self._session_denial_reason = None
         self._readiness = None
         self._event_sequence = 0
 
         try:
-            self._policy = self._client.request({"command": "describe"})
+            self._protocol_profile = self._client.request({"command": "describe"})
         except (OSError, RuntimeError, ValueError) as error:
             self.get_logger().error(f"ACCESS policy description unavailable: {error}")
 
@@ -178,15 +180,15 @@ class StationAccess(Node):
             direction="inbound",
         )
         kind = payload.get("kind")
-        if kind in {"access_request", "identity_request"}:
-            self._handle_identity_request(payload)
+        if kind == "access_request":
+            self._handle_access_request(payload)
             return
         if kind == "transition_request":
             self._handle_transition_request(payload)
             return
         self.get_logger().warning(f"ignored unknown protocol message kind: {kind}")
 
-    def _handle_identity_request(self, payload):
+    def _handle_access_request(self, payload):
         if payload.get("scenario_id") in SCENARIOS:
             self._scenario_id = payload["scenario_id"]
 
@@ -212,8 +214,8 @@ class StationAccess(Node):
                     "summary": "Rust authority established ACCESS session",
                     "authority_response": {
                         "session_id": session.get("session_id"),
-                        "policy_id": session.get("policy_id"),
-                        "policy_version": session.get("policy_version"),
+                        "protocol_profile_id": session.get("protocol_profile_id"),
+                        "protocol_profile_version": session.get("protocol_profile_version"),
                         "event_count": len(session.get("events", [])),
                     },
                 }
@@ -222,8 +224,8 @@ class StationAccess(Node):
                 self._append_event(self._display_event(event, session))
             self._completed_steps = [event["code"] for event in session["events"]]
             self._session_id = session["session_id"]
-            self._policy_id = session["policy_id"]
-            self._policy_version = session["policy_version"]
+            self._protocol_profile_id = session["protocol_profile_id"]
+            self._protocol_profile_version = session["protocol_profile_version"]
             self._session_ready = True
             self._session_denial_reason = None
 
@@ -235,8 +237,8 @@ class StationAccess(Node):
                     "from": "WAYSTATION-1",
                     "to": "ODYSSEY-7",
                     "session_id": self._session_id,
-                    "policy_id": self._policy_id,
-                    "policy_version": self._policy_version,
+                    "protocol_profile_id": self._protocol_profile_id,
+                    "protocol_profile_version": self._protocol_profile_version,
                     "secure_transport_assumed": True,
                 },
                 code="SESSION_AUTHORIZED_OUTBOUND",
@@ -253,7 +255,7 @@ class StationAccess(Node):
                 else "DENY_ACCESS_SESSION_UNAVAILABLE"
             )
             self._session_denial_reason = reason
-            self._policy_assessments = [
+            self._authorization_assessments = [
                 {
                     "rule_id": "session-establishment",
                     "action": "authorize_session",
@@ -330,6 +332,7 @@ class StationAccess(Node):
         )
 
         previous = self._state
+        outcome = {}
         try:
             if not self._session_ready:
                 raise RuntimeError("ACCESS session is not authorized")
@@ -369,7 +372,7 @@ class StationAccess(Node):
             )
             for event in outcome["events"]:
                 self._append_event(self._display_event(event, outcome))
-            self._record_policy_assessment(outcome)
+            self._record_authorization_assessment(outcome)
             if approved:
                 action = ACTION[requested_state]
                 self._entitlements.append(
@@ -412,8 +415,16 @@ class StationAccess(Node):
         decision.approved = approved
         decision.previous_state = previous
         decision.resulting_state = self._state
-        decision.authority = "station_access_authority"
+        decision.authority = "waystation-1"
         decision.reason = reason
+        decision.grant_id = outcome.get("grant_id") or ""
+        decision.grant_expires_at_s = outcome.get("grant_expires_at_s") or 0
+        decision.signed_grant_hex = outcome.get("signed_grant_hex") or ""
+        authorization_decision = outcome.get("authorization_decision") or {}
+        authorization_policy = authorization_decision.get("policy") or {}
+        decision.authorization_policy_bundle_id = authorization_policy.get("bundle_id", "")
+        decision.authorization_policy_bundle_version = authorization_policy.get("bundle_version", 0)
+        decision.authorization_policy_sha256 = authorization_policy.get("policy_sha256", "")
         self._decision_publisher.publish(decision)
         self._append_event(
             {
@@ -454,6 +465,11 @@ class StationAccess(Node):
                 "approved": approved,
                 "reason": reason,
                 "resulting_state": int(self._state),
+                "authority_id": "waystation-1",
+                "grant_id": outcome.get("grant_id"),
+                "grant_expires_at_s": outcome.get("grant_expires_at_s"),
+                "signed_grant_hex": outcome.get("signed_grant_hex"),
+                "authorization_decision": outcome.get("authorization_decision"),
                 "secure_transport_assumed": True,
             },
             code="TRANSITION_DECISION_OUTBOUND",
@@ -461,19 +477,23 @@ class StationAccess(Node):
         )
         self._publish_status()
 
-    def _record_policy_assessment(self, outcome):
+    def _record_authorization_assessment(self, outcome):
         rule_id = outcome.get("rule_id")
-        rules = self._policy.get("stage_policies", []) if self._policy else []
+        rules = self._protocol_profile.get("stage_rules", []) if self._protocol_profile else []
         rule = next((item for item in rules if item["rule_id"] == rule_id), None)
         if rule is None:
             return
         reason = outcome["reason"]
+        authorization_decision = outcome.get("authorization_decision") or {}
+        authorization_policy = authorization_decision.get("policy") or {}
+        evidence_age_ms = self._now_ms() - self._readiness["observed_at_ms"]
+        maximum_age_ms = rule["readiness"]["maximum_age_ms"]
         rows = [
             {
-                "control": "Credential profiles",
-                "requirement": ", ".join(rule["required_credential_profiles"]),
-                "observed": "verified and holder-bound",
-                "passed": reason != "DENY_CREDENTIAL_REQUIRED",
+                "control": "Protocol profile",
+                "requirement": f"{outcome.get('protocol_profile_id')} v{outcome.get('protocol_profile_version')}",
+                "observed": f"rule {rule_id}",
+                "passed": not reason.startswith("DENY_POLICY"),
             },
             {
                 "control": "Holder proof",
@@ -481,41 +501,18 @@ class StationAccess(Node):
                 "observed": "challenge response refreshed for this request",
                 "passed": reason != "DENY_HOLDER_PROOF",
             },
-        ]
-        for check in rule["readiness"]["required_checks"]:
-            passed = bool(self._readiness["checks"].get(check, False))
-            rows.append(
-                {
-                    "control": check.replace("_", " ").title(),
-                    "requirement": f"station-local evidence <= {rule['readiness']['maximum_age_ms']}ms old",
-                    "observed": "pass" if passed else "failed",
-                    "passed": passed and reason != "DENY_READINESS_STALE",
-                }
-            )
-        constraints = rule.get("constraints", {})
-        if constraints.get("max_range_m") is not None:
-            limit = constraints["max_range_m"]
-            observed = self._readiness["range_m"]
-            rows.append(
-                {
-                    "control": "Range constraint",
-                    "requirement": f"range <= {limit:.3f}m",
-                    "observed": f"{observed:.3f}m",
-                    "passed": observed <= limit,
-                }
-            )
-        if constraints.get("max_closing_rate_mps") is not None:
-            limit = constraints["max_closing_rate_mps"]
-            observed = self._readiness["closing_rate_mps"]
-            rows.append(
-                {
-                    "control": "Closing-rate constraint",
-                    "requirement": f"rate <= {limit:.3f}m/s",
-                    "observed": f"{observed:.3f}m/s",
-                    "passed": observed <= limit,
-                }
-            )
-        rows.append(
+            {
+                "control": "Evidence freshness",
+                "requirement": f"age <= {maximum_age_ms}ms",
+                "observed": f"{evidence_age_ms}ms",
+                "passed": evidence_age_ms <= maximum_age_ms,
+            },
+            {
+                "control": "ACCESS authorization policy",
+                "requirement": f"{authorization_policy.get('bundle_id', 'active bundle')} permits {rule['action']}",
+                "observed": authorization_decision.get("decision", "deny"),
+                "passed": authorization_decision.get("decision") == "allow",
+            },
             {
                 "control": "Stage entitlement",
                 "requirement": f"single use; TTL {rule['entitlement_ttl_s']}s",
@@ -525,9 +522,9 @@ class StationAccess(Node):
                     else f"not issued: {reason}"
                 ),
                 "passed": outcome["approved"],
-            }
-        )
-        self._policy_assessments.append(
+            },
+        ]
+        self._authorization_assessments.append(
             {
                 "rule_id": rule_id,
                 "action": rule["action"],
@@ -539,7 +536,7 @@ class StationAccess(Node):
                 "rows": rows,
             }
         )
-        self._policy_assessments = self._policy_assessments[-6:]
+        self._authorization_assessments = self._authorization_assessments[-6:]
 
     def _display_event(self, event, context=None):
         value = dict(event)
@@ -548,8 +545,8 @@ class StationAccess(Node):
         if context:
             for name in (
                 "session_id",
-                "policy_id",
-                "policy_version",
+                "protocol_profile_id",
+                "protocol_profile_version",
                 "rule_id",
                 "grant_id",
                 "entitlement_ttl_s",
@@ -619,7 +616,7 @@ class StationAccess(Node):
         self._station_protocol_publisher.publish(message)
 
     def _publish_status(self):
-        trust_bundle = (self._policy or {}).get("trust_bundle") or {}
+        trust_bundle = (self._protocol_profile or {}).get("trust_bundle") or {}
         payload = {
             "mode": "LIVE ACCESS PROTOCOL",
             "scenario_id": self._scenario_id,
@@ -628,18 +625,18 @@ class StationAccess(Node):
             "chaser": "Odyssey-7",
             "operator": "Lunar Logistics",
             "session_id": self._session_id or "pending",
-            "policy_id": self._policy_id
-            or (self._policy["policy_id"] if self._policy else "pending"),
-            "policy_version": self._policy_version
-            or (self._policy["policy_version"] if self._policy else None),
+            "protocol_profile_id": self._protocol_profile_id
+            or (self._protocol_profile["profile_id"] if self._protocol_profile else "pending"),
+            "protocol_profile_version": self._protocol_profile_version
+            or (self._protocol_profile["profile_version"] if self._protocol_profile else None),
             "trust_bundle": (
                 f"{trust_bundle.get('bundle_id', 'unspecified')}@"
                 f"{trust_bundle.get('minimum_version', '-')}"
                 if trust_bundle
                 else "unavailable"
             ),
-            "policy": self._policy,
-            "policy_assessments": self._policy_assessments,
+            "protocol_profile": self._protocol_profile,
+            "authorization_assessments": self._authorization_assessments,
             "phase": "SESSION_AUTHORIZED" if self._session_ready else "IDLE",
             "completed_steps": self._completed_steps,
             "events": self._events,
@@ -659,9 +656,9 @@ class StationAccess(Node):
         self._entitlements = []
         self._completed_steps = []
         self._session_id = None
-        self._policy_id = None
-        self._policy_version = None
-        self._policy_assessments = []
+        self._protocol_profile_id = None
+        self._protocol_profile_version = None
+        self._authorization_assessments = []
         self._session_ready = False
         self._session_denial_reason = None
         self._readiness = None

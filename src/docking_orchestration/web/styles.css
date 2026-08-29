@@ -49,7 +49,7 @@ li.done,li.active { border-color:var(--cyan); color:var(--cyan); }.events #event
 .security { border:1px solid var(--line); border-top:0; background:#0b1012; }
 .security-heading { display:flex; justify-content:space-between; align-items:end; padding:24px; border-bottom:1px solid var(--line); }
 .security-heading .eyebrow { margin-bottom:6px; }.security-heading h2 { margin:0; color:var(--ink); font:500 24px "Bahnschrift Condensed","Arial Narrow",sans-serif; }
-.mock-badge { padding:7px 9px; border:1px solid var(--amber); color:var(--amber); font-size:9px; }
+.status-badge { padding:7px 9px; border:1px solid var(--amber); color:var(--amber); font-size:9px; }
 .critical-gate { display:grid; grid-template-columns:150px 1fr; gap:24px; align-items:center; padding:22px 24px; border-bottom:1px solid var(--line); background:#111b1e; box-shadow:inset 4px 0 0 var(--amber); }
 .critical-gate.denied { box-shadow:inset 4px 0 0 var(--red); }.critical-gate.denied .critical-index span,.critical-gate.denied .critical-index strong,.critical-gate.denied .gate-status { color:var(--red); }
 .critical-index span,.gate-status { display:block; color:var(--amber); font-size:9px; text-transform:uppercase; }.critical-index strong { display:block; margin-top:6px; color:var(--ink); font:500 26px "Bahnschrift Condensed",sans-serif; }

@@ -1,8 +1,10 @@
 import json
+import os
 import uuid
 
 import rclpy
 from docking_interfaces.msg import TransitionRequest
+from docking_orchestration.authority_client import AuthorityClient
 from rclpy.node import Node
 from std_msgs.msg import Empty, String
 
@@ -14,12 +16,26 @@ SCENARIOS = {
     "latch_not_ready",
 }
 
+STAGE_NAME = {
+    1: "approach",
+    2: "final_approach",
+    3: "soft_capture",
+    4: "hard_dock",
+}
+
 
 class ChaserAccess(Node):
     """Chaser-side ACCESS participant that exchanges protocol material with station ACCESS."""
 
     def __init__(self):
         super().__init__("chaser_access")
+        self._entitlement_verifier = AuthorityClient(
+            os.environ.get(
+                "ACCESS_ENTITLEMENT_VERIFIER_COMMAND",
+                "access-entitlement-verifier",
+            ),
+            float(os.environ.get("ACCESS_ENTITLEMENT_VERIFIER_TIMEOUT_S", "5")),
+        )
         self._scenario_id = "nominal"
         self._session_id = None
         self._sequence = 0
@@ -118,15 +134,44 @@ class ChaserAccess(Node):
                 f"session denied by station: reason={payload.get('reason', 'unknown')}"
             )
         elif kind == "transition_decision":
+            if not payload.get("approved"):
+                self.get_logger().warning(
+                    "station denied transition: "
+                    f"reason={payload.get('reason', 'unknown')}"
+                )
+                return
+            try:
+                expected_stage = STAGE_NAME[int(payload["resulting_state"])]
+                verified = self._entitlement_verifier.request(
+                    {
+                        "command": "verify_entitlement",
+                        "entitlement_hex": payload["signed_grant_hex"],
+                        "expected_authority": payload["authority_id"],
+                        "expected_session_id": self._session_id,
+                        "expected_stage": expected_stage,
+                    }
+                )
+            except (KeyError, OSError, RuntimeError, ValueError) as error:
+                self.get_logger().error(
+                    f"rejected unverified station entitlement: {error}"
+                )
+                return
             self.get_logger().info(
-                "received station transition decision: "
-                f"approved={payload.get('approved')} reason={payload.get('reason')}"
+                "verified station entitlement: "
+                f"grant_id={verified['grant_id']} "
+                f"authority={verified['authority_id']} "
+                f"trust_bundle={verified['trust_bundle_id']}@"
+                f"{verified['trust_bundle_version']}"
             )
 
     def _publish_protocol(self, payload):
         message = String()
         message.data = json.dumps(payload, separators=(",", ":"))
         self._protocol_publisher.publish(message)
+
+    def destroy_node(self):
+        self._entitlement_verifier.close()
+        return super().destroy_node()
 
 
 def main(args=None):

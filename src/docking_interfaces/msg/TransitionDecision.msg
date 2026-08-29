@@ -3,3 +3,9 @@ uint8 previous_state
 uint8 resulting_state
 string authority
 string reason
+string grant_id
+int64 grant_expires_at_s
+string signed_grant_hex
+string authorization_policy_bundle_id
+uint64 authorization_policy_bundle_version
+string authorization_policy_sha256

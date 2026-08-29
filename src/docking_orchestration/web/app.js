@@ -42,7 +42,7 @@ function eventMetadata(event) {
   if (event.protocol_version) values.push(`protocol v${event.protocol_version}`);
   if (Array.isArray(event.protocol_shape)) values.push(`fields ${event.protocol_shape.length}`);
   if (event.session_id) values.push(`session ${shortId(event.session_id)}`);
-  if (event.policy_id) values.push(`${event.policy_id} v${event.policy_version}`);
+  if (event.protocol_profile_id) values.push(`${event.protocol_profile_id} v${event.protocol_profile_version}`);
   if (event.rule_id) values.push(`rule ${event.rule_id}`);
   if (event.grant_id) values.push(`grant ${shortId(event.grant_id)}`);
   if (event.entitlement_ttl_s) values.push(`TTL ${event.entitlement_ttl_s}s`);
@@ -53,23 +53,23 @@ function isProtocolMessage(event) {
   return event.kind === "message" && event.from && event.to && event.message_type;
 }
 
-function policyRows(auth) {
-  const assessment = auth.policy_assessments?.at(-1);
+function authorizationRows(auth) {
+  const assessment = auth.authorization_assessments?.at(-1);
   if (assessment) {
     return assessment.rows.map((row) => ({
       ...row,
       status: row.passed ? "complete" : "failed",
     }));
   }
-  const policy = auth.policy;
-  if (!policy) return [];
-  const trustBundle = policy.trust_bundle;
-  const credentialProfiles = policy.credential_profiles ?? [];
-  const stagePolicies = policy.stage_policies ?? [];
+  const protocolProfile = auth.protocol_profile;
+  if (!protocolProfile) return [];
+  const trustBundle = protocolProfile.trust_bundle;
+  const credentialProfiles = protocolProfile.credential_profiles ?? [];
+  const stageRules = protocolProfile.stage_rules ?? [];
   return [
     {
-      control: "Policy validity",
-      requirement: `${policy.valid_from} through ${policy.valid_until}`,
+      control: "Protocol profile validity",
+      requirement: `${protocolProfile.valid_from} through ${protocolProfile.valid_until}`,
       observed: "loaded by authority",
       passed: true,
       status: "complete",
@@ -92,7 +92,7 @@ function policyRows(auth) {
     },
     {
       control: "Stage rules",
-      requirement: `${stagePolicies.length} transition rules; default deny`,
+      requirement: `${stageRules.length} transition rules; default deny`,
       observed: "awaiting transition evidence",
       passed: true,
       status: "pending",
@@ -183,11 +183,11 @@ function showViewportMessage(auth) {
 function renderAuthorization(auth, simulation) {
   setText("#auth-scenario", auth.scenario);
   setText("#auth-mode", auth.mode);
-  const latestAssessment = auth.policy_assessments?.at(-1);
+  const latestAssessment = auth.authorization_assessments?.at(-1);
   policyIdNode.textContent = latestAssessment
-    ? `${auth.policy_id} v${auth.policy_version} · ${latestAssessment.rule_id} · ${latestAssessment.reason}`
-    : `${auth.policy_id} v${auth.policy_version ?? "-"} · ${auth.trust_bundle}`;
-  const assessmentRows = policyRows(auth).map(({ control, requirement, observed, passed, status }) => {
+    ? `${auth.protocol_profile_id} v${auth.protocol_profile_version} · ${latestAssessment.rule_id} · ${latestAssessment.reason}`
+    : `${auth.protocol_profile_id} v${auth.protocol_profile_version ?? "-"} · ${auth.trust_bundle}`;
+  const assessmentRows = authorizationRows(auth).map(({ control, requirement, observed, passed, status }) => {
     const resolvedStatus = status || (passed ? "complete" : String(observed).toLowerCase().includes("awaiting") ? "pending" : "failed");
     const row = document.createElement("div");
     row.className = `policy-check ${resolvedStatus}`;
@@ -212,7 +212,7 @@ function renderAuthorization(auth, simulation) {
   });
   policyChecksNode.replaceChildren(...(assessmentRows.length
     ? assessmentRows
-    : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for authority policy" })]));
+    : [Object.assign(document.createElement("p"), { className: "empty", textContent: "Waiting for authority authorization data" })]));
 
   const completed = new Set(auth.completed_steps);
   const issuedActions = new Set(auth.entitlements.map((entitlement) => entitlement.action));
