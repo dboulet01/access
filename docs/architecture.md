@@ -56,12 +56,13 @@ participant from impersonating the gate at the DDS layer.
 
 | Package | Status | Responsibility |
 | --- | --- | --- |
-| `docking_identity_core` | Implemented | COSE/CBOR, trust, replay defense, policy, deterministic reducer |
-| `docking_interfaces` | Implemented | Backend-neutral state, request, and decision wire contracts |
-| `docking_orchestration` | Implemented baseline | Launch, deterministic controller, development gate, smoke monitor |
+| `docking_identity_core` | Implemented | COSE/CBOR, credentials, sessions, grants, replay defense, deterministic reducer |
+| `docking_interfaces` | Implemented | Backend-neutral state, request, readiness, and decision wire contracts |
+| `docking_orchestration` | Implemented | ROS adapter, readiness monitor, launch, controller, dashboard, smoke monitor |
 | `docking_gazebo` | Implemented baseline | Zero-gravity Fortress world and spacecraft instances |
 | `docking_description` | Implemented baseline | Reusable URDF/Xacro spacecraft description |
-| `docking_identity_node` | Next | Rust ROS adapter, session negotiation, trust-store loading |
+| `access-authority` | Implemented reference | Rust policy authority using public trust and durable replay state |
+| `access-signer` | Implemented fixture | Role-bound signing process; replaceable with HSM/KMS integration |
 | `docking_basilisk_bridge` | Planned | Optional high-fidelity dynamics bridge |
 | `docking_capture_plugin` | Planned | Compliant contact and capture constraints |
 
@@ -69,24 +70,28 @@ participant from impersonating the gate at the DDS layer.
 
 ```mermaid
 flowchart LR
-    CTRL[baseline_controller] -->|TransitionRequest| DEV[development_gate]
-    DEV -->|TransitionDecision| CTRL
+    CTRL[baseline_controller] -->|TransitionRequest| ADAPTER[access_authorization]
+    CTRL -->|DockingStatus| READY[readiness_monitor]
+    READY -->|ReadinessEvidence| ADAPTER
+    ADAPTER -->|JSON-lines request| ACCESS[Rust access-authority]
+    ACCESS -->|Role-bound signing request| SIGNER[access-signer or HSM/KMS]
+    ACCESS -->|Verified decision| ADAPTER
+    ADAPTER -->|TransitionDecision| CTRL
     CTRL -->|SetEntityPose| BRIDGE[ros_gz_bridge]
     BRIDGE --> GZ[Gazebo Fortress]
     CTRL -->|DockingStatus| MON[docking_monitor or telemetry]
 ```
 
-The development gate is the intended replacement point. `docking_identity_node`
-must subscribe to `/docking/transition_request`, evaluate verified session state
-through `docking_identity_core`, and publish `/docking/transition_decision`.
-No controller or Gazebo changes are required for that replacement.
+The Python adapter pairs each transition request with the next station-local
+readiness sample, but does not decide authorization. The long-lived Rust process
+owns session and durable replay state, evaluates policy, issues and consumes
+grants, invokes the reducer, and returns authoritative audit metadata.
 
 The normalized policy input, structured decision, and single-use entitlement
 contracts are defined in [authorization-policy.md](authorization-policy.md).
 
-Run the baseline gate and future identity gate mutually exclusively. DDS/SROS 2
-policy must eventually ensure only the selected authority can publish transition
-decisions.
+Run only one transition authority. DDS/SROS 2 policy must ensure only the
+selected adapter can publish transition decisions.
 
 ## Identity topic contract
 

@@ -40,9 +40,10 @@ The repository currently has two implemented slices:
 1. `docking_identity_core`, a physics-independent Rust security crate.
 2. A containerized ROS 2 Humble and Gazebo Fortress reference environment.
 
-The Rust core is not yet connected as the live ROS transition authority. The
-reference environment currently uses a mock authority at the same enforcement
-boundary. This project is not flight-qualified.
+The Rust core is connected as the live ROS transition authority through a
+JSON-lines process adapter. The reference flow performs Ed25519/COSE identity,
+credential, holder-proof, session, and stage-grant operations. This project is
+not flight-qualified.
 
 ## Docking reference environment
 
@@ -52,7 +53,7 @@ The simulation provides:
 - collision-enabled bodies and visible docking interfaces
 - a deterministic kinematic approach controller backed by Gazebo's pose service
 - explicit `HOLD`, `APPROACH`, `FINAL_APPROACH`, `SOFT_CAPTURE`, and `HARD_DOCK` states
-- a separate development transition gate that can be replaced by the Rust identity node
+- a Rust ACCESS authority at the protected transition boundary
 - ROS status, transition-request, and transition-decision topics
 - a headless end-to-end smoke test
 
@@ -138,6 +139,13 @@ The Rust core provides:
 - protected key IDs, issuer and recipient binding, freshness checks, and replay rejection
 - deterministic, fail-closed gates for final approach, soft capture, and hard dock
 
+Runtime configuration is selected with `ACCESS_AUTHORITY_COMMAND`,
+`ACCESS_SIGNER_COMMAND`, `ACCESS_IDENTITIES_FILE`, `ACCESS_TRUST_BUNDLE_FILE`,
+`ACCESS_POLICY_FILE`, and `ACCESS_STATE_DIR`. The checked-in files under
+`config/access/` are public simulation fixtures, including deliberately exposed
+private seeds. See [Security configuration](docs/security-configuration.md)
+before substituting deployment credentials.
+
 Run the Rust tests on any host with Rust:
 
 ```bash
@@ -150,6 +158,7 @@ cargo test --workspace
 - [Design principles](docs/project-principles.md)
 - [Architecture](docs/architecture.md)
 - [Authorization policy](docs/authorization-policy.md)
+- [Security configuration](docs/security-configuration.md)
 - [Commercial refueling scenario](docs/commercial-refueling-scenario.md)
 - [Roadmap](docs/roadmap.md)
 

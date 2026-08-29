@@ -145,14 +145,15 @@ retreat capability. Session authorization cannot manufacture physical
 readiness, and readiness cannot substitute for identity authorization.
 
 The visual controller starts immediately so it can receive reset commands, but
-holds motion for 19 seconds. During that interval, identity messages are paced
-about three seconds apart and the initial hold becomes ready.
+holds motion for 19 seconds. On reset, the Rust authority completes the signed
+identity request, session challenge, credential presentation, and holder proof;
+the resulting audit events are published to the dashboard.
 
 ## Phase 4: Policy-Bound Docking Transitions
 
 The existing `baseline_controller` requests transitions when Gazebo-confirmed
-range reaches each checkpoint. In the visual launch, `mock_authorization`
-replaces `development_gate` and applies the happy-path policy shape.
+range reaches each checkpoint. Both launch profiles route these requests through
+`access_authorization` to the Rust `access-authority` process.
 
 | Range and request | Security decision | Simulation effect |
 | --- | --- | --- |
@@ -162,8 +163,8 @@ replaces `development_gate` and applies the happy-path policy shape.
 | `0.040 m`, `SOFT_CAPTURE -> HARD_DOCK` | Soft capture is confirmed, latches are ready, relative motion is stable | Ten-second, single-use `engage_hard_dock` entitlement is consumed |
 | `0.000 m`, hard dock complete | Gazebo acknowledges the final pose | UI reports hard dock; no additional movement entitlement exists |
 
-The visual mock records `ALLOW_POLICY_SATISFIED`, a stage evidence summary, and
-a unique entitlement ID. The complete production decision contract additionally
+The authority records `ALLOW_VERIFIED_ACCESS_GRANT`, the signed grant issuance,
+and its single-use consumption. The complete production decision contract additionally
 records policy and trust-bundle versions, evidence digests, and obligations. A
 complete allow example is
 [`commercial-final-approach.allow.json`](../examples/authorization/commercial-final-approach.allow.json).

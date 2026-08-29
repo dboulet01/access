@@ -5,7 +5,7 @@ authorization implementation.
 
 ## Phase 1: Executable reference model
 
-**Status:** In progress
+**Status:** Complete
 
 - deterministic Rust authorization reducer
 - COSE/CBOR claims and signature verification
@@ -21,7 +21,8 @@ cannot cross protected transitions without the required authorization evidence.
 
 - separate normative protocol types from reference-environment concepts
 - publish a versioned CDDL wire specification
-- support caller-provided clock, randomness, keys, and durable replay storage
+- support caller-provided clock and randomness
+- define a production durable-state backend beyond the reference journal
 - define revocation, degraded-clock, communication-loss, and recovery behavior
 - provide a stable, reviewed C ABI
 - evaluate a constrained or `no_std` Rust profile

@@ -122,10 +122,11 @@ the entitlement ID in durable replay state before allowing the action.
 | `FINAL_APPROACH -> SOFT_CAPTURE` | Compatible interface and fresh session | Stop at 0.320 m |
 | `SOFT_CAPTURE -> HARD_DOCK` | Explicit single-use hard-dock entitlement | Remain soft-captured at 0.040 m |
 
-The current `development_gate` approves sequential transitions without this
-evidence. The Rust identity node will replace it, build the normalized
-evaluation input, apply the selected policy, sign an entitlement, and publish a
-transition decision. The controller and Gazebo interfaces remain unchanged.
+The Rust ACCESS authority now signs a stage-scoped grant, verifies its audience,
+session, stage, freshness, signature, and nonce at the transition gate, and only
+then invokes the deterministic reducer. It evaluates the versioned policy file
+against fresh station-local range, closing-rate, and named readiness evidence.
+Consumed nonces and grant IDs are durably journaled before acceptance.
 
 ## Versioning and Audit
 
