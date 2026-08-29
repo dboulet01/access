@@ -25,9 +25,14 @@ def generate_launch_description():
         arguments=["/world/docking/set_pose@ros_gz_interfaces/srv/SetEntityPose"],
         output="screen",
     )
-    gate = Node(
+    station_access = Node(
         package="docking_orchestration",
-        executable="access_authorization",
+        executable="station_access",
+        output="screen",
+    )
+    chaser_access = Node(
+        package="docking_orchestration",
+        executable="chaser_access",
         output="screen",
     )
     readiness = Node(
@@ -61,7 +66,8 @@ def generate_launch_description():
             DeclareLaunchArgument("telemetry_interval", default_value="0.5"),
             gazebo,
             bridge,
-            gate,
+            station_access,
+            chaser_access,
             readiness,
             controller,
             monitor,
