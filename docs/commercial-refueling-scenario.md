@@ -96,12 +96,75 @@ The station returns a challenge bound to this audience and encounter:
 In the visual simulation, the authorization funnel marks **Trust bundle**,
 **Issuer scope**, and **Challenge** as these steps complete.
 
+### Protocol message sequence (simulation)
+
+This scenario instantiates flow SF1 (Encounter Authorization) from
+[ACCESS protocol flows](access-protocol-flows.md). The runtime sequence here is
+chaser-initiated. Station readiness evidence informs policy decisions but does
+not initiate identity challenge exchange.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Ops as Simulator Run/Reset
+  participant AR as ACCESS Requester (Odyssey-7 chaser_access)
+  participant AA as ACCESS Authority (Waystation-1 station_access)
+  participant APE as ACCESS Policy Engine (Rust access-authority)
+  participant AES as ACCESS Evidence Service (readiness_monitor)
+  participant AEP as ACCESS Enforcement Point (controller gate)
+
+  Ops->>AR: run/reset trigger
+  AR->>AA: access_request
+  AA->>APE: establish(scenario)
+  APE-->>AA: session context + policy metadata + events
+  AA-->>AR: session_authorized or session_denied
+
+  loop For each protected stage advance
+    AEP->>AR: transition_request
+    AR->>AA: transition_request
+    AES-->>AA: latest readiness evidence
+    AA->>APE: transition(requested_state, readiness)
+    APE-->>AA: allow/deny + reason + grant metadata
+    AA-->>AR: transition_decision
+    AA-->>AEP: TransitionDecision for gate progression
+  end
+```
+
+Operationally, this means:
+
+1. Odyssey-7 initiates protocol exchange by transmitting `access_request`.
+2. ACCESS Authority responds after evaluating policy context with ACCESS Policy
+  Engine.
+3. Proximity and safety checks are station-local readiness inputs evaluated
+   during transition authorization, not handshake initiators.
+
+### Implementation profile mapping for this scenario
+
+The commercial refueling simulation is a concrete implementation profile of
+flow SF1. It binds the standard sequence to this station policy and evidence
+contract:
+
+1. Policy baseline: `commercial-docking-v3` default-deny stage policy.
+2. Credential checks: staged issuer trust, credential validity interval,
+  subject and operator binding, and required profile membership.
+3. Holder-proof checks: challenge-bound, audience-bound, freshness-bounded
+  proof for session establishment and transition use.
+4. Readiness checks: station-local evidence including hold confirmation,
+  corridor, alignment, latch, and relative-motion constraints.
+5. Grant semantics: short-lived, single-use, stage-scoped entitlements that
+  are issued on allow and consumed at the transition gate.
+
 ## Phase 2: Credential Presentation and Holder Proof
 
-Odyssey-7 returns an arbitrary credential collection inside a bounded,
-deterministically encoded presentation. Only allowlisted credential profiles can
-affect policy. Unknown non-critical credentials may be retained for audit but do
-not grant authority.
+This phase defines the credential facts required by flow SF1. In the current
+simulator profile, these credential artifacts are evaluated by station-side
+authority fixtures during session establishment rather than carried as explicit
+chaser-to-station protocol payloads.
+
+In production explicit-carriage mode, Odyssey-7 returns a bounded,
+deterministically encoded credential presentation. Only allowlisted credential
+profiles can affect policy. Unknown non-critical credentials may be retained
+for audit but do not grant authority.
 
 The useful credentials in this scenario are:
 
@@ -145,15 +208,17 @@ retreat capability. Session authorization cannot manufacture physical
 readiness, and readiness cannot substitute for identity authorization.
 
 The visual controller starts immediately so it can receive reset commands, but
-holds motion for 19 seconds. On reset, the Rust authority completes the signed
-identity request, session challenge, credential presentation, and holder proof;
-the resulting audit events are published to the dashboard.
+holds motion for 19 seconds. On reset, the Rust authority evaluates the signed
+`access_request`, session context, fixture-backed credential facts, and holder
+proof checks; the resulting audit events are published to the dashboard.
 
 ## Phase 4: Policy-Bound Docking Transitions
 
-The existing `baseline_controller` requests transitions when Gazebo-confirmed
-range reaches each checkpoint. Both launch profiles route these requests through
-`access_authorization` to the Rust `access-authority` process.
+The ACCESS Enforcement Point requests transitions when Gazebo-confirmed range
+reaches each checkpoint. In this reference implementation, the enforcement path
+is mediated by `baseline_controller`, while protocol exchange is handled by
+`chaser_access` and `station_access`; station then calls the Rust
+`access-authority` process for policy decisions.
 
 | Range and request | Security decision | Simulation effect |
 | --- | --- | --- |

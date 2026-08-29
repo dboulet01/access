@@ -17,10 +17,11 @@ flowchart LR
     CORE --> AUDIT[Auditable decision evidence]
 ```
 
-Secure transport protects message delivery. The authorization kernel determines
-whether the authenticated peer has current, scoped authority for the requested
-interaction. Mission GNC retains responsibility for determining whether motion
-is physically safe; authorization cannot override failed local safety evidence.
+Secure transport protects message delivery and is assumed to be pre-established
+by mission operations. ACCESS runs above that channel and determines whether the
+authenticated peer has current, scoped authority for the requested interaction.
+Mission GNC retains responsibility for determining whether motion is physically
+safe; authorization cannot override failed local safety evidence.
 
 The portable boundary includes protocol claims, policy evaluation, replay state,
 entitlement issuance and consumption, and deterministic failure behavior. ROS 2,
@@ -82,10 +83,13 @@ flowchart LR
     CTRL -->|DockingStatus| MON[docking_monitor or telemetry]
 ```
 
-The Python adapter pairs each transition request with the next station-local
-readiness sample, but does not decide authorization. The long-lived Rust process
+The Python adapter layer now separates chaser and station ACCESS participants
+into distinct nodes and explicit protocol topics. The station-side Rust process
 owns session and durable replay state, evaluates policy, issues and consumes
 grants, invokes the reducer, and returns authoritative audit metadata.
+
+For standards-aligned credential transport and profile details, see
+[credential-exchange-profile.md](credential-exchange-profile.md).
 
 The normalized policy input, structured decision, and single-use entitlement
 contracts are defined in [authorization-policy.md](authorization-policy.md).
