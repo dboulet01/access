@@ -1,0 +1,23 @@
+{
+  "bundle_id": "waystation-1-trust",
+  "version": 42,
+  "issued_at": "2026-08-29T00:00:00Z",
+  "environment": "simulation",
+  "keys": [
+    {
+      "key_id": "odyssey-7",
+      "public_key_hex": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+      "scopes": ["station_peer"]
+    },
+    {
+      "key_id": "waystation-1",
+      "public_key_hex": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+      "scopes": ["chaser_peer", "transition_gate"]
+    },
+    {
+      "key_id": "orbital-safety-registry",
+      "public_key_hex": "ed4928c628d1c2c6eae90338905995612959273a5c63f93636c14614ac8737d1",
+      "scopes": ["credential_issuer"]
+    }
+  ]
+}

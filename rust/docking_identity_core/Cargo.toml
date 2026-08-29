@@ -5,10 +5,22 @@ edition.workspace = true
 license.workspace = true
 version.workspace = true
 
+[[bin]]
+name = "access-authority"
+path = "src/bin/access_authority.rs"
+
+[[bin]]
+name = "access-signer"
+path = "src/bin/access_signer.rs"
+
 [dependencies]
 ciborium.workspace = true
+chrono.workspace = true
 coset.workspace = true
 ed25519-dalek.workspace = true
+getrandom.workspace = true
+hex.workspace = true
 serde.workspace = true
 serde_bytes.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
