@@ -10,7 +10,10 @@ authorization implementation.
 - deterministic Rust authorization reducer
 - COSE/CBOR claims and signature verification
 - replay and freshness rejection
-- policy schemas and example decisions
+- versioned protocol-profile and authorization-policy bundle schemas
+- embedded ACCESS authorization policy over verified authority facts
+- signed policy provenance in stage entitlements
+- client authority Trust Bundle and entitlement verifier
 - ROS 2/Gazebo docking reference environment
 - deterministic allow and deny demonstrations
 

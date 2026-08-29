@@ -22,28 +22,40 @@ The first reference use case covers visiting-vehicle progression through
 rendezvous, proximity operations, and docking. The same authorization model can
 be applied to servicing, refueling, capture, assembly, and resource access.
 
-## Components
+ACCESS is an application-level **spacecraft interaction authorization** system.
+It complements secure communications, mission safety logic, flight software,
+and mechanical interface standards; it does not replace them. The protocol and
+security core are independent of ROS 2, Gazebo, Python, and the dashboard.
 
-1. **Open protocol:** identity, session, authority, revocation, and failure
-	semantics.
-2. **Portable kernel:** deterministic, simulator-independent authorization and
-	state reduction.
-3. **Integration contracts:** stable Rust and C interfaces plus adapters for
-	flight, robotics, and simulation frameworks.
-4. **Conformance evidence:** schemas, test vectors, negative tests, threat
-	models, and reproducible builds.
+## Goals and principles
+
+- **Open and portable:** independent implementations can use the protocol and
+	core without the reference simulator.
+- **Small trusted core:** authentication, policy, entitlement, replay, and
+	protected-state logic remain deterministic and auditable.
+- **Fail closed:** stale, missing, replayed, or unverifiable evidence never
+	releases a protected action.
+- **Verified facts:** the authority authenticates evidence before the ACCESS
+	Policy Service evaluates it.
+- **Explicit boundaries:** adapters translate platforms and transports without
+	redefining authorization semantics.
+- **Evidence-backed maturity:** tests, vectors, schemas, threat analysis, and
+	qualification evidence support claims; the reference is not flight-certified.
+
+Canonical roles, interfaces, and component mappings are defined only in
+[Architecture](docs/architecture.md).
 
 ## Status
 
 The repository currently has two implemented slices:
 
-1. `docking_identity_core`, a physics-independent Rust security crate.
+1. `access_core`, a physics-independent Rust security crate.
 2. A containerized ROS 2 Humble and Gazebo Fortress reference environment.
 
-The Rust core is connected as the live ROS transition authority through a
-JSON-lines process adapter. The reference flow performs Ed25519/COSE identity,
-credential, holder-proof, session, and stage-grant operations. This project is
-not flight-qualified.
+The live reference uses Rust for authentication, session integrity, entitlement
+handling, policy evaluation, and enforcement; and ROS 2/Gazebo
+for integration and simulation. The client independently verifies returned
+entitlements. See [Architecture](docs/architecture.md) for the role mapping.
 
 ## Docking reference environment
 
@@ -54,6 +66,8 @@ The simulation provides:
 - a deterministic kinematic approach controller backed by Gazebo's pose service
 - explicit `HOLD`, `APPROACH`, `FINAL_APPROACH`, `SOFT_CAPTURE`, and `HARD_DOCK` states
 - a Rust ACCESS authority at the protected transition boundary
+- ground-managed ACCESS authorization policy evaluated over verified facts
+- client-side authority, audience, session, stage, expiry, and replay checks
 - ROS status, transition-request, and transition-decision topics
 - a headless end-to-end smoke test
 
@@ -99,8 +113,8 @@ simulation**. Each browser is assigned one of three isolated ROS/Gazebo
 instances. A fourth session receives HTTP `503` until a slot is released or an
 abandoned lease expires after 60 seconds.
 
-Select **Start simulation** in the dashboard to reset the chaser and development
-gate and begin the selected profile. Opening or refreshing the dashboard never
+Select **Start simulation** in the dashboard to reset the chaser and authority
+session and begin the selected scenario. Opening or refreshing the dashboard never
 starts a run. The display remains in `RESETTING` until Gazebo confirms the
 initial pose, shows a brief `HOLD`, and then starts the docking sequence.
 
@@ -108,12 +122,6 @@ You can also start a visual slot directly from the command line:
 
 ```powershell
 docker compose exec docking-visual-1 ros2 topic pub --once /docking/reset std_msgs/msg/Empty "{}"
-```
-
-You can recreate the complete visual pool from the command line:
-
-```powershell
-docker compose restart docking-visual-1 docking-visual-2 docking-visual-3 docking-gateway
 ```
 
 To expose the pool through ngrok, keep an ignored `.env` file at the repository
@@ -132,19 +140,9 @@ Stop the simulation with `Ctrl+C`, then remove its container:
 docker compose down
 ```
 
-The Rust core provides:
-
-- tagged COSE_Sign1 envelopes with canonical CBOR claims
-- Ed25519 signing and strict verification
-- protected key IDs, issuer and recipient binding, freshness checks, and replay rejection
-- deterministic, fail-closed gates for final approach, soft capture, and hard dock
-
-Runtime configuration is selected with `ACCESS_AUTHORITY_COMMAND`,
-`ACCESS_SIGNER_COMMAND`, `ACCESS_IDENTITIES_FILE`, `ACCESS_TRUST_BUNDLE_FILE`,
-`ACCESS_POLICY_FILE`, and `ACCESS_STATE_DIR`. The checked-in files under
-`config/access/` are public simulation fixtures, including deliberately exposed
-private seeds. See [Security configuration](docs/security-configuration.md)
-before substituting deployment credentials.
+Runtime settings and fixture warnings are documented in
+[Security configuration](docs/security-configuration.md). Checked-in identities
+and Trust Bundles are public simulation material, not deployment credentials.
 
 Run the Rust tests on any host with Rust:
 
@@ -152,17 +150,21 @@ Run the Rust tests on any host with Rust:
 cargo test --workspace
 ```
 
-## Documentation
+## Documentation guide
 
-- [Overview and terminology](docs/positioning.md)
-- [Design principles](docs/project-principles.md)
-- [Architecture](docs/architecture.md)
-- [ACCESS protocol flows](docs/access-protocol-flows.md)
-- [Authorization policy](docs/authorization-policy.md)
-- [Credential exchange profile](docs/credential-exchange-profile.md)
-- [Security configuration](docs/security-configuration.md)
-- [Commercial refueling scenario](docs/commercial-refueling-scenario.md)
-- [Roadmap](docs/roadmap.md)
+The documentation has one source for each concern:
+
+1. [Architecture](docs/architecture.md) — canonical roles, interfaces, trust
+	boundaries, and implementation mapping.
+2. [Protocol flows](docs/access-protocol-flows.md) — peer messages, invariants,
+	credential carriage, and implemented/planned flows.
+3. [Authorization](docs/authorization-policy.md) — policy evaluation,
+	entitlements, provenance, and reference engine configuration.
+4. [Security configuration](docs/security-configuration.md) — Trust Bundles,
+	runtime settings, key boundaries, and production requirements.
+5. [Commercial refueling scenario](docs/commercial-refueling-scenario.md) — the
+	end-to-end reference use case.
+6. [Roadmap](docs/roadmap.md) — current maturity and planned work.
 
 ### GPU override
 
@@ -184,6 +186,7 @@ capture latches, or hard-dock constraints.
 ## Security status
 
 This is a development baseline, not flight-certified software. Production and
-hardware-in-the-loop deployments must add protected key storage, durable replay
-state, certificate lifecycle management, SROS 2 enclaves, secure boot, audit
-retention, independent hazard analysis, and qualification evidence.
+hardware-in-the-loop deployments must add protected key storage,
+rollback-resistant replay storage, authenticated configuration distribution,
+certificate lifecycle management, SROS 2 enclaves, secure boot, audit retention,
+independent hazard analysis, and qualification evidence.

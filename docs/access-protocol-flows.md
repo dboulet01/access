@@ -10,35 +10,17 @@ lifecycle behavior.
 Use-case documents such as docking or refueling should select one flow profile
 from this catalog and then specify policy, claims, and safety evidence details.
 
-## Normative roles and interfaces
+## Roles and interfaces
 
-ACCESS defines protocol roles independent of implementation technology.
+The canonical AC, AAS, APS, AEG, and AEP responsibilities and their reference
+component mappings are defined in [architecture.md](architecture.md). This
+document uses those logical roles to describe protocol ordering; co-located
+roles do not imply an on-wire call.
 
-| Role ID | Role name | Responsibility |
-| --- | --- | --- |
-| AR | ACCESS Requester | Requests authorization for protected actions |
-| AA | ACCESS Authority | Validates protocol messages and issues authorization decisions |
-| APE | ACCESS Policy Engine | Evaluates policy and evidence, returns allow or deny outputs |
-| AEP | ACCESS Enforcement Point | Enforces transition or actuation using issued decision or grant |
-| AES | ACCESS Evidence Service | Produces station-local readiness or safety evidence used by policy |
-
-Logical interfaces:
-
-- `A-REQ`: requester to authority protocol exchange (`access_request`, `transition_request`)
-- `A-DEC`: authority to requester decision exchange (`session_authorized`, `session_denied`, `transition_decision`)
-- `A-POL`: authority to policy engine evaluation calls (`establish`, `transition`)
-- `A-EVD`: evidence service to authority evidence feed (readiness and constraints)
-- `A-ENF`: authority to enforcement point control contract
-
-Reference implementation role mapping:
-
-| Normative role | Current component mapping |
-| --- | --- |
-| AR | `chaser_access` node |
-| AA | `station_access` node |
-| APE | Rust `access-authority` process |
-| AEP | protected transition decision path consumed by controller gate |
-| AES | `readiness_monitor` node |
+The peer-facing interfaces are `access.request` from AC to AAS and
+`access.decision` from AAS to AC. `access.policy`, `access.evidence`, and
+`access.enforcement` are authority-side logical interfaces and may remain
+in-process.
 
 ## Message primitives
 
@@ -54,15 +36,6 @@ Credential exchange extension primitive:
 
 - access_presentation (optional; explicit credential carriage)
 
-Optional lifecycle primitives:
-
-- session_resume_request
-- session_resumed
-- session_rebind_required
-- authorization_pending
-- authorization_approved
-- authorization_rejected
-
 ## Mandatory invariants for all flows
 
 1. Fail closed on unverifiable identity, stale evidence, replay, timeout,
@@ -70,19 +43,10 @@ Optional lifecycle primitives:
 2. Bind every authorization decision to audience, session, requester, and time.
 3. Require station-local readiness evidence for safety-critical transitions.
 4. Issue narrow, short-lived, single-use entitlements for protected actions.
-5. Preserve durable audit records for message digests, policy version, trust
-   bundle version, reason codes, and grant lifecycle.
-
-## Standard flow set
-
-The ACCESS standard defines two canonical interaction flows. Additional runtime
-behaviors are modeled as modifiers, not separate flows, to keep
-interoperability surface area small.
-
-| Flow ID | Name | Typical initiator | Primary use |
-| --- | --- | --- | --- |
-| SF1 | Encounter Authorization | chaser | first-time encounter authorization |
-| SF2 | Station-Initiated Challenge | station | unsolicited contact challenge |
+5. Preserve audit records for message digests, policy and trust versions,
+  reason codes, and entitlement lifecycle.
+6. Require the client to verify every allowed transition's signed entitlement
+  against its own authority Trust Bundle before accepting the decision.
 
 ## SF1: Encounter Authorization
 
@@ -90,22 +54,24 @@ Canonical ACCESS request and decision exchange for encounter authorization.
 
 ```mermaid
 sequenceDiagram
-  participant AR as ACCESS Requester
-  participant AA as ACCESS Authority
-  participant APE as ACCESS Policy Engine
-  participant AEP as ACCESS Enforcement Point
+  participant AC as ACCESS Client
+  participant AAS as ACCESS Authority Service
+  participant APS as ACCESS Policy Service
+  participant AEG as ACCESS Enforcement Gateway
 
-  AR->>AA: A-REQ access_request
-  AA->>APE: A-POL establish(context)
-  APE-->>AA: allow/deny + session context
-  AA-->>AR: A-DEC session_authorized or session_denied
+  AC->>AAS: access.request access_request
+  AAS->>APS: access.policy establish(context)
+  APS-->>AAS: allow/deny + session context
+  AAS-->>AC: access.decision session_authorized or session_denied
 
   loop protected actions
-    AR->>AA: A-REQ transition_request
-    AA->>APE: A-POL transition(requested_state, readiness)
-    APE-->>AA: allow/deny + reason + grant
-    AA-->>AR: A-DEC transition_decision
-    AA-->>AEP: A-ENF enforceable transition decision
+    AC->>AAS: access.request transition_request
+    AAS->>APS: access.policy verified facts
+    APS-->>AAS: permit/deny + provenance
+    AAS->>AEG: access.enforcement signed entitlement
+    AEG-->>AAS: enforced transition outcome
+    AAS-->>AC: access.decision outcome + entitlement
+    AC->>AC: verify authority, recipient, session, stage, expiry, replay
   end
 ```
 
@@ -122,11 +88,11 @@ exactly where policy is assessed.
 | Step | Message or action | Direction | Required protocol fields | Policy assessment |
 | --- | --- | --- | --- | --- |
 | 1 | access_request | chaser -> station | `protocol_version`, `kind`, `message_id`, `from`, `to`, `scenario_id`, `secure_transport_assumed`, `credential_presentation_profile` | none; request intake and structural validation only |
-| 2 | establish(context) | AA -> APE (A-POL) | scenario and station context | Assessment A: session establishment policy (trust bundle, issuer or profile gating, credential and holder-proof checks in active profile) |
-| 3 | session_authorized or session_denied | AA -> AR (A-DEC) | `protocol_version`, `kind`, `message_id`, `from`, `to`, plus `session_id` and policy metadata on allow or `reason` on deny | none; result of Assessment A |
-| 4 | transition_request | AR -> AA (A-REQ) | `protocol_version`, `kind`, `message_id`, `sequence`, `from`, `to`, `session_id`, `requested_state`, `reason` | none; request intake and session binding checks |
-| 5 | transition(requested_state, readiness) | AA -> APE (A-POL) | requested state and station-local readiness snapshot from AES via A-EVD | Assessment B: stage transition policy (session validity, readiness constraints, limits, grant eligibility) |
-| 6 | transition_decision | AA -> AR (A-DEC) | `protocol_version`, `kind`, `message_id`, `from`, `to`, `session_id`, `approved`, `reason`, `resulting_state` | none; result of Assessment B |
+| 2 | establish(context) | AAS -> APS (`access.policy`) | authenticated credential, holder-proof, and scenario facts | Assessment A: ACCESS session policy over facts established by Rust verification |
+| 3 | session_authorized or session_denied | AAS -> AC (`access.decision`) | `protocol_version`, `kind`, `message_id`, `from`, `to`, plus `session_id` and authorization-policy bundle metadata on allow or `reason` on deny | none; result of Assessment A |
+| 4 | transition_request | AC -> AAS (`access.request`) | `protocol_version`, `kind`, `message_id`, `sequence`, `from`, `to`, `session_id`, `requested_state`, `reason` | none; request intake and session binding checks |
+| 5 | policy and enforcement | AAS -> APS -> AEG | authenticated session, requested stage, and fresh station-local evidence | APS assesses ACCESS policy; AEG verifies and consumes the entitlement before releasing the transition |
+| 6 | transition_decision | AAS -> AC (`access.decision`) | bindings, `approved`, `reason`, `resulting_state`, signed entitlement, and authorization-policy provenance | AC accepts an allow only after local Trust Bundle and entitlement verification |
 
 Credential carriage modes for SF1:
 
@@ -138,57 +104,33 @@ Credential carriage modes for SF1:
   before session authorization; station validates cryptographic proofs and
   passes normalized facts into Assessment A.
 
-## SF2: Station-Initiated Challenge
+### Credential profile
 
-Equivalent pattern: server-initiated challenge flow for unsolicited contact.
+The reference profile uses VC 2.0-shaped artifacts for vehicle registration,
+docking certification, and presentation:
 
-```mermaid
-sequenceDiagram
-  participant AA as ACCESS Authority
-  participant AR as ACCESS Requester
-  participant APE as ACCESS Policy Engine
+- [vehicle registration schema](../schemas/vc-vehicle-registration-credential.schema.json)
+- [docking certification schema](../schemas/vc-docking-certification-credential.schema.json)
+- [ACCESS presentation schema](../schemas/vc-access-presentation.schema.json)
 
-  AA-->>AR: identity_challenge(encounter scope)
-  AR->>AA: A-REQ access_request(+challenge response)
-  AA->>APE: A-POL establish(context)
-  APE-->>AA: allow/deny + session context
-  AA-->>AR: A-DEC session_authorized or session_denied
-```
+ACCESS does not trust verifier results supplied by the client. The AAS verifies
+credential signature, validity, issuer scope, subject binding, holder proof,
+freshness, and replay state before exposing normalized facts to the APS.
+Unknown credentials may be retained for audit, but only configured credential
+profiles influence a decision.
 
-Notes:
-
-- Useful when station sensors detect contact before explicit service intent.
-- Policy can require stronger freshness windows for unsolicited encounters.
-
-## Standard modifiers (not separate flows)
-
-The following are normative protocol behaviors that can be layered onto SF1 or
-SF2 without introducing new flow IDs:
-
-1. Session resume: `session_resume_request` and `session_resumed` with fresh
-  holder proof and replay-window checks.
-2. Delegated approval: `authorization_pending` and ticket finalization by an
-  operator channel.
-3. Emergency revoke and recovery: immediate deny, grant revocation commit, and
-  mandatory full re-entry through SF1 or SF2.
-
-Branding and compatibility note:
-
-- `access_request` is the canonical branded request primitive.
-- Implementations may accept legacy `identity_request` during migration.
-
-## Flow selection guidance
-
-1. Choose the flow by mission interaction model, not by transport type.
-2. Reuse the same policy contract and reason code families across flows.
-3. Keep flow-specific logic in adapters; keep security semantics in authority
-   core and gate.
-4. Version flow behavior explicitly so mixed fleets can interoperate safely.
+The reference simulator does not carry credential artifacts over the ROS peer
+topics; it resolves deterministic fixtures after receiving presentation intent.
+Explicit carriage through `access_presentation` remains planned. Either mode
+uses the same verified-fact and entitlement semantics.
 
 ## Current implementation status
 
 - Implemented in reference simulation: SF1 Encounter Authorization.
-- Planned in reference simulation: SF2 Station-Initiated Challenge.
-- Planned modifiers: session resume, delegated approval, emergency revoke.
 - Current SF1 credential mode: reference mode; explicit `access_presentation`
   is a planned extension.
+- Planned protocol work: station-initiated challenge, session resume, delegated
+  approval, emergency revoke/recovery, and explicit version negotiation. These
+  are roadmap items, not current wire contracts.
+- Trust and bundle distribution are defined in
+  [security-configuration.md](security-configuration.md).

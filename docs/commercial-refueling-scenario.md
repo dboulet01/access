@@ -4,325 +4,151 @@
 
 Commercial tug **Odyssey-7**, operated by **Lunar Logistics**, requests docking
 and methane refueling at **Waystation-1**, port 3. The station is operated by a
-different organization and has no reason to trust the tug merely because it can
-communicate over a protected link.
+different organization and does not trust the tug merely because it can use a
+protected communications channel.
 
 The station must establish four distinct facts:
 
 1. Credential issuers were approved through station governance.
 2. Odyssey-7 holds valid credentials from those issuers.
-3. The party presenting them controls the encounter key for this session.
-4. Each requested operation satisfies current station policy and readiness.
+3. The presenter controls the encounter key for this session.
+4. Every requested operation satisfies current ACCESS authorization policy and local readiness.
 
-The visual simulation runs this happy-path scenario using deterministic mock
-identity evidence. The docking motion, ROS requests, policy-shaped decisions,
-Gazebo pose acknowledgements, and UI updates are live. DID resolution,
-credential signatures, revocation checks, and COSE entitlement signatures are
-represented but not yet cryptographically executed by the mock authority.
+The visual simulation uses deterministic cryptographic fixtures and the canonical
+role model defined in [architecture.md](architecture.md). Live DID resolution and
+online revocation services are not implemented.
 
-## Actors and Identifiers
+## Actors
 
-| Actor | Example identifier | Role |
+| Actor | Reference identifier | Role |
 | --- | --- | --- |
-| Station | `station:waystation-1` | Resource owner and policy authority |
-| Station port | `station:waystation-1/port-3` | Physical and authorization audience |
-| Chaser | `did:web:lunar-logistics.example:spacecraft:odyssey-7` | Credential subject |
-| Encounter identity | `did:peer:2.EzOdysseyEncounter` | Pairwise session identity |
-| Operator | `did:web:lunar-logistics.example` | Vehicle operator |
-| Registrar | Approved issuer group | Issues registration credentials |
-| Docking authority | `did:web:orbital-safety.example` | Issues interface certification |
-| Local safety monitor | `station:waystation-1:navigation-monitor` | Produces readiness evidence |
+| Station | `waystation-1` | ACCESS authority and resource owner |
+| Station port | `port-3` | Physical and authorization resource |
+| Chaser | `odyssey-7` | ACCESS client and credential subject |
+| Operator | `lunar-logistics` | Vehicle operator |
+| Registrar | `lunar-registry` | Vehicle-registration credential issuer |
+| Docking authority | `orbital-safety` | Docking-certification issuer |
+| Readiness monitor | station-local ROS node | Produces trusted operational evidence |
 
-These identifier values are examples, not a requirement to use `did:web`. The
-station trust bundle may contain method-specific verifier profiles for multiple
-DID methods or X.509 identities. No live external resolution is required during
-the encounter.
+The fixture identifiers are intentionally local. Production profiles may use
+DIDs or X.509 identities through reviewed verifier adapters.
 
-## Phase 0: Out-of-Band Station Onboarding
+## Phase 0: Ground provisioning
 
-Before Odyssey-7 approaches, station governance approves organizations that may
-issue relevant credentials. Ground operations generate and sign trust bundle
-`waystation-1-trust@42`, containing:
+Ground operations provision three independent configuration classes:
 
-- pinned issuer verification state
-- allowed credential types and schemas per issuer group
-- key validity and revocation snapshots
-- approved DID-method verification adapters
-- policy and claim-profile versions
-- activation and expiration times
-- rollback-protected bundle version
+1. The station Trust Bundle defines accepted peer, credential-issuer, and key
+   purposes. Staging an issuer allows its credentials into authentication; it
+   does not authorize a spacecraft or operation.
+2. The [ACCESS Authorization Policy Bundle](../config/access/access-authorization-policy-bundle.json)
+  selects the active use-case policy, version, and validity window.
+3. Odyssey-7's client Trust Bundle pins Waystation-1's authority ID and
+   entitlement-signing public key. It is independent of the station's issuer
+   Trust Bundle.
 
-The station loads the bundle into protected local storage. Staging an issuer
-only permits its credentials to enter the authorization funnel. It does not
-approve an individual spacecraft, session, or docking operation.
+The [protocol profile](../config/access/access-protocol-profile.json) defines
+cryptographic, freshness, state, and entitlement constraints. ACCESS
+Authorization Policy defines required verified claims, readiness combinations,
+and operational limits.
 
-The active station policy is
-[`commercial-docking-v3`](../examples/authorization/commercial-docking.policy.json).
-It defaults to deny and defines the required credential, proof, session,
-readiness, constraint, and entitlement rules for each transition.
+## Phase 1: Session establishment
 
-## Phase 1: Service Intent and Challenge
-
-At the rendezvous boundary, Odyssey-7 sends a signed service intent:
-
-```json
-{
-  "type": "service_intent",
-  "vehicle_id": "did:web:lunar-logistics.example:spacecraft:odyssey-7",
-  "encounter_id": "did:peer:2.EzOdysseyEncounter",
-  "station_id": "station:waystation-1",
-  "port_id": "port-3",
-  "mission_id": "mission:ll-2026-1842",
-  "requested_services": ["dock", "methane_refuel"],
-  "requested_quantity_kg": 400,
-  "chaser_nonce": "chaser-381"
-}
-```
-
-The station returns a challenge bound to this audience and encounter:
-
-```json
-{
-  "type": "identity_challenge",
-  "session_id": "session:dock-2026-1842",
-  "station_id": "station:waystation-1",
-  "port_id": "port-3",
-  "station_nonce": "station-972",
-  "required_profiles": ["registered-vehicle-v1", "idss-compatible-v1"],
-  "expires_in_s": 60
-}
-```
-
-In the visual simulation, the authorization funnel marks **Trust bundle**,
-**Issuer scope**, and **Challenge** as these steps complete.
-
-### Protocol message sequence (simulation)
-
-This scenario instantiates flow SF1 (Encounter Authorization) from
-[ACCESS protocol flows](access-protocol-flows.md). The runtime sequence here is
-chaser-initiated. Station readiness evidence informs policy decisions but does
-not initiate identity challenge exchange.
+This scenario instantiates SF1 Encounter Authorization from
+[access-protocol-flows.md](access-protocol-flows.md).
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Ops as Simulator Run/Reset
-  participant AR as ACCESS Requester (Odyssey-7 chaser_access)
-  participant AA as ACCESS Authority (Waystation-1 station_access)
-  participant APE as ACCESS Policy Engine (Rust access-authority)
-  participant AES as ACCESS Evidence Service (readiness_monitor)
-  participant AEP as ACCESS Enforcement Point (controller gate)
+  participant AC as ACCESS Client
+  participant AAS as ACCESS Authority Service
+  participant APS as ACCESS Policy Service
+  participant AEP as Readiness monitor
+  participant AEG as ACCESS Enforcement Gateway
 
-  Ops->>AR: run/reset trigger
-  AR->>AA: access_request
-  AA->>APE: establish(scenario)
-  APE-->>AA: session context + policy metadata + events
-  AA-->>AR: session_authorized or session_denied
+  AC->>AAS: access_request
+  AAS->>AAS: authenticate evidence and establish session
+  AAS->>APS: verified session facts
+  APS-->>AAS: permit or deny plus provenance
+  AAS-->>AC: session_authorized or session_denied
 
-  loop For each protected stage advance
-    AEP->>AR: transition_request
-    AR->>AA: transition_request
-    AES-->>AA: latest readiness evidence
-    AA->>APE: transition(requested_state, readiness)
-    APE-->>AA: allow/deny + reason + grant metadata
-    AA-->>AR: transition_decision
-    AA-->>AEP: TransitionDecision for gate progression
+  loop each protected transition
+    AEG->>AC: local transition request
+    AC->>AAS: transition_request
+    AEP-->>AAS: fresh station-local readiness
+    AAS->>AAS: authenticate bindings
+    AAS->>APS: verified transition facts
+    APS-->>AAS: permit or deny plus provenance
+    AAS->>AEG: signed entitlement
+    AEG-->>AAS: enforced transition outcome
+    AAS-->>AC: outcome plus entitlement
+    AC->>AC: verify authority, recipient, session, stage, expiry, replay
   end
 ```
 
-Operationally, this means:
+In reference mode, the chaser sends presentation intent and the authority loads
+deterministic credential fixtures. Explicit credential carriage is a planned
+production extension. In either mode, request-provided verifier booleans are not
+trusted; the APS receives only facts established by the authority.
 
-1. Odyssey-7 initiates protocol exchange by transmitting `access_request`.
-2. ACCESS Authority responds after evaluating policy context with ACCESS Policy
-  Engine.
-3. Proximity and safety checks are station-local readiness inputs evaluated
-   during transition authorization, not handshake initiators.
+## Phase 2: Credential and holder authentication
 
-### Implementation profile mapping for this scenario
-
-The commercial refueling simulation is a concrete implementation profile of
-flow SF1. It binds the standard sequence to this station policy and evidence
-contract:
-
-1. Policy baseline: `commercial-docking-v3` default-deny stage policy.
-2. Credential checks: staged issuer trust, credential validity interval,
-  subject and operator binding, and required profile membership.
-3. Holder-proof checks: challenge-bound, audience-bound, freshness-bounded
-  proof for session establishment and transition use.
-4. Readiness checks: station-local evidence including hold confirmation,
-  corridor, alignment, latch, and relative-motion constraints.
-5. Grant semantics: short-lived, single-use, stage-scoped entitlements that
-  are issued on allow and consumed at the transition gate.
-
-## Phase 2: Credential Presentation and Holder Proof
-
-This phase defines the credential facts required by flow SF1. In the current
-simulator profile, these credential artifacts are evaluated by station-side
-authority fixtures during session establishment rather than carried as explicit
-chaser-to-station protocol payloads.
-
-In production explicit-carriage mode, Odyssey-7 returns a bounded,
-deterministically encoded credential presentation. Only allowlisted credential
-profiles can affect policy. Unknown non-critical credentials may be retained
-for audit but do not grant authority.
-
-The useful credentials in this scenario are:
+The scenario uses:
 
 - `VehicleRegistrationCredential`, binding Odyssey-7 to Lunar Logistics
 - `DockingCertificationCredential`, asserting an IDSS-compatible interface
-- optionally, a service-order or payment-assurance credential for refueling
+- a holder proof bound to challenge, client, authority, session, and credential
+  digests
 
-The holder proof signs the station challenge together with the vehicle,
-encounter identity, station, port, mission, session, and credential digests. It
-proves that a recorded credential was not copied from another spacecraft and
-replayed into this encounter.
+Rust validates issuer key scope, signatures, validity intervals, subject and
+holder bindings, message freshness, and replay state. The APS then decides whether
+the authenticated claim values satisfy the active ACCESS policy rules.
 
-Station-controlled verifiers then produce normalized facts:
+## Phase 3: Authorized transitions
 
-- issuer is staged for this credential type and schema
-- credential signature and validity period pass
-- credential status is current enough for policy
-- credential subject matches Odyssey-7 or its operator as required
-- required IDSS compatibility claims pass a reviewed claim profile
-- holder proof is fresh, challenge-bound, and audience-bound
-
-The chaser cannot directly assert fields such as `signature_valid` or
-`issuer_trust`. Those are internal outputs of station verifiers. A representative
-normalized record is
-[`commercial-final-approach.input.json`](../examples/authorization/commercial-final-approach.input.json).
-
-## Phase 3: Session Authorization and Initial Hold
-
-After identity and eligibility checks pass, the station creates
-`session:dock-2026-1842`, bound to:
-
-- Odyssey-7's durable and encounter identities
-- Waystation-1 and port 3
-- mission `ll-2026-1842`
-- permitted docking and refueling services
-- a monotonic message sequence
-- an explicit expiration and revocation state
-
-The station's navigation monitor independently confirms the initial hold and
-retreat capability. Session authorization cannot manufacture physical
-readiness, and readiness cannot substitute for identity authorization.
-
-The visual controller starts immediately so it can receive reset commands, but
-holds motion for 19 seconds. On reset, the Rust authority evaluates the signed
-`access_request`, session context, fixture-backed credential facts, and holder
-proof checks; the resulting audit events are published to the dashboard.
-
-## Phase 4: Policy-Bound Docking Transitions
-
-The ACCESS Enforcement Point requests transitions when Gazebo-confirmed range
-reaches each checkpoint. In this reference implementation, the enforcement path
-is mediated by `baseline_controller`, while protocol exchange is handled by
-`chaser_access` and `station_access`; station then calls the Rust
-`access-authority` process for policy decisions.
-
-| Range and request | Security decision | Simulation effect |
+| Range and request | ACCESS policy and invariant decision | Simulation effect |
 | --- | --- | --- |
-| `3.320 m`, `HOLD -> APPROACH` | Registration, holder proof, session context, and initial hold pass | Single-use `enter_approach` entitlement is consumed; chaser starts moving |
-| `1.120 m`, `APPROACH -> FINAL_APPROACH` | Identity, IDSS credential, authorized session, corridor and closing-rate checks pass | `enter_final_approach` entitlement is consumed |
-| `0.320 m`, `FINAL_APPROACH -> SOFT_CAPTURE` | Interface compatibility, session, alignment, and capture readiness pass | `engage_soft_capture` entitlement is consumed |
-| `0.040 m`, `SOFT_CAPTURE -> HARD_DOCK` | Soft capture is confirmed, latches are ready, relative motion is stable | Ten-second, single-use `engage_hard_dock` entitlement is consumed |
-| `0.000 m`, hard dock complete | Gazebo acknowledges the final pose | UI reports hard dock; no additional movement entitlement exists |
+| `3.320 m`, `HOLD -> APPROACH` | Registration, holder proof, session, and initial hold pass | `enter_approach` entitlement is consumed; motion starts |
+| `1.120 m`, `APPROACH -> FINAL_APPROACH` | Docking certification, corridor, and closing-rate limits pass | `enter_final_approach` entitlement is consumed |
+| `0.320 m`, `FINAL_APPROACH -> SOFT_CAPTURE` | Interface, alignment, and capture readiness pass | `engage_soft_capture` entitlement is consumed |
+| `0.040 m`, `SOFT_CAPTURE -> HARD_DOCK` | Soft capture, latch readiness, and stable relative motion pass | `engage_hard_dock` entitlement is consumed |
 
-The authority records `ALLOW_VERIFIED_ACCESS_GRANT`, the signed grant issuance,
-and its single-use consumption. The complete production decision contract additionally
-records policy and trust-bundle versions, evidence digests, and obligations. A
-complete allow example is
-[`commercial-final-approach.allow.json`](../examples/authorization/commercial-final-approach.allow.json).
+Each allow requires both an ACCESS policy permit and successful protocol/safety
+invariants. The station consumes the signed entitlement at the AEG before state
+progression; the client verifies the returned copy before accepting the result.
+Detailed bindings are defined in
+[authorization-policy.md](authorization-policy.md).
 
-If a required fact fails, no entitlement is created. For example, an expired
-docking credential produces `DENY_CREDENTIAL_EXPIRED`, and the controller
-remains at the current checkpoint. See
-[`expired-credential.deny.json`](../examples/authorization/expired-credential.deny.json).
+Failure creates no accepted entitlement. The deterministic profiles demonstrate
+credential expiration, corridor violation, and incomplete latch telemetry through
+the executable Rust and end-to-end simulation tests.
 
-## Phase 5: Service Authorization After Docking
+## Phase 4: Resource service
 
-Docking does not imply permission to use station resources. A production system
-would perform another policy decision before opening the methane interface:
+Docking does not imply authority to use station resources. Methane transfer is a
+future ACCESS policy action and enforcement gate that would require commercial
+clearance, valve and pressure compatibility, metering readiness, quantity limits,
+and emergency shutdown availability. The current simulation stops at hard dock.
 
-```json
-{
-  "action": "transfer_resource",
-  "resource_type": "cryogenic_methane",
-  "maximum_quantity_kg": 400,
-  "station_id": "station:waystation-1",
-  "port_id": "port-3",
-  "session_id": "session:dock-2026-1842",
-  "expires_in_s": 300,
-  "single_use": true
-}
-```
+## Audit and replay
 
-The service gate would additionally verify valve state, pressure compatibility,
-commercial clearance, metering readiness, and emergency shutdown availability.
-Transfer receipts would record the measured quantity rather than the maximum
-authorized quantity.
+The authority records decision inputs, policy provenance, reason codes, and
+entitlement consumption. The client maintains a separate durable replay journal.
+Private key material is not part of audit output.
 
-The current simulation stops at hard dock; resource transfer is documented as
-the next service-gate extension.
-
-## Phase 6: Audit, Receipt, and Departure
-
-The station retains a signed audit package containing:
-
-- message and credential digests, not unnecessary private claims
-- verification and revocation results
-- exact trust bundle and policy versions
-- holder-proof challenge and session bindings
-- allow, deny, and indeterminate decisions with reason codes
-- entitlement issuance and atomic consumption records
-- readiness-evidence digests and timestamps
-- docking and service completion receipts
-- aborts, retries, expiry, and operator interventions
-
-The same pattern authorizes disconnect and departure. Completed sessions are
-closed, outstanding entitlements are revoked, and replay identifiers remain in
-durable storage for their required retention period.
-
-## Running the Visual Scenario
-
-Start the three-session visual pool:
-
-```powershell
-docker compose up --build docking-gateway
-```
-
-Open [http://localhost:8080](http://localhost:8080). The gateway assigns each
-browser to an isolated ROS domain and Gazebo partition for the duration of its
-idle lease. The dashboard displays live state and range, authorization checks,
-protocol messages, local evidence, issued entitlements, and replay data.
-
-Choose a **Run profile**, then select **Start simulation**. The flight recorder
-becomes available after successful hard dock or an authorization denial.
-Available profiles are:
+## Demonstrated outcomes
 
 | Profile | Denied gate | Evidence shown |
 | --- | --- | --- |
-| Nominal authorization | None | All four single-use entitlements are consumed |
-| Expired vehicle credential | Enter approach at `3.320 m` | Credential expiration, verifier time, and allowed clock skew |
-| Approach corridor violation | Enter final approach at `1.120 m` | Cross-track error, limit, closing rate, and corridor ID |
-| Latch telemetry incomplete | Engage hard dock at `0.040 m` | Ready-latch count, ring load, relative rate, and required count |
+| Nominal authorization | None | Four signed single-use entitlements |
+| Expired vehicle credential | Enter approach | Credential expiry and verifier time |
+| Approach corridor violation | Enter final approach | Cross-track and closing-rate limits |
+| Latch telemetry incomplete | Engage hard dock | Latch count and relative-motion evidence |
 
-Failure profiles are deterministic. A denial creates no entitlement and halts
-the controller at the corresponding checkpoint.
+Run instructions are maintained in the repository [README](../README.md).
 
-## Implementation Boundary
+## Reference boundary
 
-The visual flow is deliberately realistic in structure and deliberately mock in
-cryptographic execution. The production replacement must:
-
-1. Load signed trust bundles and policy files.
-2. Resolve only staged method profiles from local cached material.
-3. Verify real credential and holder-proof signatures.
-4. Build the normalized evaluation record using station-owned facts.
-5. Evaluate the declarative stage policy in Rust.
-6. Sign deterministic CBOR entitlements in COSE.
-7. Persist replay and entitlement-consumption state.
-8. Publish the existing ROS transition decision only after enforcement succeeds.
-
-That replacement preserves the current controller, Gazebo world, dashboard
-status contract, and physical checkpoints.
+This is an executable authorization demonstration, not production key or
+configuration infrastructure. Fixture keys are public and bundles are locally
+configured. Production gaps are tracked in [roadmap.md](roadmap.md) and
+[security-configuration.md](security-configuration.md).

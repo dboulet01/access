@@ -1,34 +1,41 @@
-# Policy-Bound Authorization Model
+# ACCESS Authorization
 
 ## Purpose
 
-The authorization system converts signed identity evidence, station policy, and
-local operational evidence into an auditable decision and, only when allowed, a
-short-lived entitlement. Staging an issuer is the first trust filter; it never
-authorizes a spacecraft or operation by itself.
+ACCESS converts authenticated identity evidence and station-local operational
+evidence into verified policy facts. An allow produces a short-lived signed
+entitlement; every other outcome blocks the action. Staging an issuer only
+admits its credentials for verification and never authorizes an operation.
 
-The JSON Schemas in `schemas/` define the logical data model and provide an
-operator-friendly diagnostic representation. Protocol messages use deterministic
-CBOR carried in COSE envelopes. Rust types and a CDDL profile should become the
-normative wire definition before interoperability testing.
+Protocol messages use deterministic CBOR carried in COSE envelopes. The current
+runtime contract is the Rust protocol model; a CDDL profile
+should be published before interoperability testing.
 
-## Authorization Funnel
+## Responsibility boundary
+
+The AAS authenticates evidence and enforces protocol invariants; the APS applies
+ACCESS authorization policy to use-case actions over verified facts; the AEG verifies and
+consumes the resulting entitlement. See [architecture.md](architecture.md) for
+role boundaries. Requester-supplied verifier results are never authoritative
+facts.
+
+## Authorization funnel
 
 ```mermaid
 flowchart LR
     A[Staged issuer] --> B[Valid credential]
     B --> C[Subject and holder binding]
     C --> D[Authorized encounter session]
-    D --> E[Matching stage policy]
-    E --> F[Local readiness]
+      D --> E[ACCESS policy over verified facts]
+      E --> F[Protocol and safety invariants]
     F --> G[Signed single-use entitlement]
-    G --> H[Command or capture gate]
+   G --> H[ACCESS Enforcement Gateway]
 ```
 
-Each filter is mandatory when named by the selected stage policy. Failure at
+Each filter is mandatory when named by the selected ACCESS Authorization Policy rule. Failure at
 any filter prevents an entitlement from being created.
 
-## Data Ownership
+## Data ownership
 
 The evaluation document is an internal normalized record, not a message the
 chaser may assert directly.
@@ -40,7 +47,7 @@ chaser may assert directly.
 | Credential signature, status, and time results | Station credential verifier |
 | Session status and sequence | Station session manager |
 | Operational readiness | Station-local navigation and safety monitors |
-| Policy selection and decision | Station policy engine |
+| Use-case authorization and decision | ACCESS Policy Service |
 | Entitlement signature | Station authorization signer |
 
 An arbitrary credential may be transported and audited, but it affects policy
@@ -48,102 +55,117 @@ only if its type, schema, issuer group, subject binding, and claim profile are
 explicitly configured. Claim profiles are reviewed verifier implementations;
 credentials cannot carry executable policy.
 
-## Decision Algorithm
+## Decision algorithm
 
-For a request and selected stage rule, the policy engine evaluates these steps
-in order:
+For a request, the authority evaluates these steps in order:
 
 1. Validate message size, deterministic encoding, protected COSE headers,
    signature algorithm, signer key ID, audience, nonce, and freshness.
-2. Select exactly one active station policy by station, port, action, previous
-   stage, requested stage, and evaluation time.
-3. Verify that the trust bundle is signed, unexpired, at or above the policy's
-   minimum version, and not older than its maximum age.
-4. Verify every required credential through its named profile. The issuer must
-   be staged for that credential type and schema. Signature, validity period,
-   status freshness, subject binding, and required claims must pass.
+2. Select one active policy and trust configuration for the evaluation time.
+3. Verify trust version and key purpose. Invalid or unavailable configuration
+   is not an authorization result.
+4. Authenticate credentials through their named profiles. The issuer must be
+   staged for that credential type and schema. Signature, validity period,
+   status freshness, and subject binding must pass.
 5. Verify holder possession using a fresh station challenge bound to vehicle,
    encounter identity, station, port, mission, and session.
 6. Verify session status, endpoint bindings, expiration, and monotonic sequence.
 7. Verify the requested transition is valid from the station's current state.
-8. Verify all named readiness checks are station-produced, passing, and within
-   the rule's evidence-age limit.
-9. Apply station overrides. Active abort, revocation, port quarantine, or a
-   violated hard constraint always denies.
-10. Emit a structured decision. Only `allow` creates an entitlement, and the
-    entitlement may not exceed the rule's lifetime or constraints.
+8. Map authenticated claim values and fresh station-produced readiness into a
+   deterministic policy context; evaluate the session or stage action.
+9. Apply non-overridable protocol and safety invariants. Active abort, revocation, invalid
+   state, stale evidence, or entitlement binding failure always denies regardless of
+   policy output.
+10. Emit a structured decision. Only the intersection of policy `allow` and
+   invariant success creates an entitlement within configured lifetime and
+   constraints.
 
 Conceptually:
 
 $$
-allow = policyValid \land trustValid \land credentialsValid \land
-holderBound \land sessionValid \land transitionValid \land readinessValid
+allow = policyAllow \land trustValid \land credentialsAuthentic \land
+holderBound \land sessionValid \land transitionValid \land freshnessValid
 \land \neg denyOverride
 $$
 
 Authorization does not override safety. A valid entitlement and current local
 readiness are both required at the enforcement point.
 
+## Policy bundle and reference engine
+
+The APS loads the manifest selected by
+`ACCESS_AUTHORIZATION_POLICY_BUNDLE_FILE`. The bundle supplies a stable ID,
+monotonic version, validity interval, and policy source. Startup fails closed
+when the bundle is unavailable, outside its validity window, or cannot be
+parsed. Policy is loaded once rather than in the transition loop.
+
+The public artifact is an **ACCESS Authorization Policy Bundle**. The reference
+APS implements its policy source with the Cedar engine and Cedar syntax; Cedar
+is an internal technology choice, not a peer-facing component or protocol term.
+
+The active reference artifacts are:
+
+- [authorization policy bundle](../config/access/access-authorization-policy-bundle.json)
+- [bundle schema](../schemas/access-authorization-policy-bundle.schema.json)
+- [commercial docking policy source](../examples/authorization/policies/commercial-docking.cedar)
+
+## Verified facts and provenance
+
+Policy input can include authenticated credential profiles, holder-proof state,
+session state, requested action, and fresh station-local readiness values. Trust,
+signature validity, session authorization, and readiness flags supplied by a
+requester are not accepted as facts.
+
+Each allow binds the ACCESS authorization policy bundle ID, version, and source
+SHA-256 digest into the signed entitlement alongside the protocol profile and
+matched rule. The AEG verifies those bindings and atomically consumes the
+entitlement before releasing one protected transition. The AC independently
+verifies the returned entitlement against its authority Trust Bundle.
+
 ## Outcomes
 
-- `allow`: All required facts are established. A signed entitlement is present.
-- `deny`: Verified evidence conclusively violates policy, such as an expired
-  credential, invalid transition, replay, or failed readiness check.
-- `indeterminate`: The engine cannot establish a required fact, such as stale
-  revocation state, untrusted clock, unsupported schema, or internal failure.
+- `approved: true`: all required facts and invariants passed; a signed
+   entitlement and policy provenance are present.
+- `approved: false`: the authority rejected the request and returns a stable
+   reason code plus available rule and policy context.
+- authority processing or configuration failure: the JSON-lines request fails
+   and the adapter blocks the operation. It is not converted into an allow or a
+   synthetic peer decision.
 
-Both `deny` and `indeterminate` block the operation. They remain distinct for
-operator response, retry policy, and audit analysis. No exception or missing
-rule may default to `allow`.
+No exception, unavailable fact, or missing rule defaults to approval.
 
-## Entitlement Rules
+## Entitlement rules
 
-An entitlement is a station-signed capability for one subject, audience,
-station, port, mission, session, action, and stage. It is:
+An entitlement is a station-signed capability bound to one authority, client
+recipient, session, stage, protocol profile, matched rule, and authorization
+policy bundle. It is:
 
 - short-lived
 - single-use
-- bound to the request nonce and monotonic session sequence
-- constrained by range, closing rate, service type, or quantity where relevant
-- consumed atomically by the command or capture gate
-- invalidated by expiry, abort, session revocation, subject change, or policy
-  constraints becoming false
+- bound to a unique entitlement ID and signed policy provenance
+- consumed atomically by the AEG
+- invalidated by expiry, replay, session mismatch, recipient mismatch, stage
+   mismatch, or provenance mismatch
 
-The enforcement point verifies the COSE signature and protected algorithm/key
+The station enforcement point verifies the COSE signature and protected algorithm/key
 headers, checks every binding, rechecks required local readiness, and records
 the entitlement ID in durable replay state before allowing the action.
 
-## Current Simulation Mapping
+The AC independently verifies the returned entitlement before accepting an
+approved decision. See [security-configuration.md](security-configuration.md)
+for authority Trust Bundle and replay requirements. The docking-specific policy
+and enforcement walkthrough is in
+[commercial-refueling-scenario.md](commercial-refueling-scenario.md).
 
-| Simulation transition | Initial policy requirement | Enforcement behavior |
-| --- | --- | --- |
-| `HOLD -> APPROACH` | Registered vehicle, fresh holder proof, initial hold | Remain in hold on failure |
-| `APPROACH -> FINAL_APPROACH` | Identity and docking credential, authorized session | Stop at 1.120 m |
-| `FINAL_APPROACH -> SOFT_CAPTURE` | Compatible interface and fresh session | Stop at 0.320 m |
-| `SOFT_CAPTURE -> HARD_DOCK` | Explicit single-use hard-dock entitlement | Remain soft-captured at 0.040 m |
-
-The Rust ACCESS authority now signs a stage-scoped grant, verifies its audience,
-session, stage, freshness, signature, and nonce at the transition gate, and only
-then invokes the deterministic reducer. It evaluates the versioned policy file
-against fresh station-local range, closing-rate, and named readiness evidence.
-Consumed nonces and grant IDs are durably journaled before acceptance.
-
-## Versioning and Audit
+## Versioning and audit
 
 Policy, trust bundle, credential schema, claim profile, and protocol versions
 are independent. Every decision records exact policy and evidence digests so it
 can be reproduced without trusting mutable external resources.
 
-Changes to trusted issuers or policy require signed monotonic bundles, rollback
-protection, controlled activation time, and an audit trail. Unknown fields are
-rejected unless a protocol version explicitly marks them non-critical.
-
-## Artifacts
-
-- `schemas/authorization-policy.schema.json`: declarative station policy
-- `schemas/authorization-evaluation.schema.json`: normalized evaluator input
-- `schemas/authorization-decision.schema.json`: decision and entitlement output
-- `examples/authorization/`: allow, deny, policy, and evaluation examples
+Production changes to trust or policy require authenticated monotonic bundles,
+rollback protection, controlled activation, and an audit trail. Unknown fields
+are rejected unless a protocol version marks them non-critical.
 
 The complete operational walkthrough is documented in
 [commercial-refueling-scenario.md](commercial-refueling-scenario.md).
