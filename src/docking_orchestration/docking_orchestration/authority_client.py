@@ -1,4 +1,5 @@
 import json
+import math
 import queue
 import shlex
 import subprocess
@@ -7,9 +8,15 @@ import threading
 
 class AuthorityClient:
     def __init__(self, command, timeout_s=5.0):
+        if isinstance(command, str) and not command.strip():
+            raise ValueError("ACCESS authority command must not be empty")
+        if not math.isfinite(timeout_s) or timeout_s <= 0:
+            raise ValueError("ACCESS authority timeout must be finite and greater than zero")
         self._lock = threading.Lock()
         self._timeout_s = timeout_s
         arguments = shlex.split(command) if isinstance(command, str) else command
+        if not arguments:
+            raise ValueError("ACCESS authority command must not be empty")
         self._process = subprocess.Popen(
             arguments,
             stdin=subprocess.PIPE,

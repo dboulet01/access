@@ -1,0 +1,3 @@
+[tool.pytest.ini_options]
+testpaths = ["src/docking_orchestration/test"]
+pythonpath = ["src/docking_orchestration"]

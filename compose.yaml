@@ -1,3 +1,17 @@
+x-access-environment: &access-environment
+  ACCESS_IDENTITIES_FILE: ${ACCESS_IDENTITIES_FILE:-/workspace/config/access/simulation-identities.json}
+  ACCESS_TRUST_BUNDLE_FILE: ${ACCESS_TRUST_BUNDLE_FILE:-/workspace/config/access/simulation-trust-bundle.json}
+  ACCESS_PROTOCOL_PROFILE_FILE: ${ACCESS_PROTOCOL_PROFILE_FILE:-/workspace/config/access/access-protocol-profile.json}
+  ACCESS_AUTHORIZATION_POLICY_BUNDLE_FILE: ${ACCESS_AUTHORIZATION_POLICY_BUNDLE_FILE:-/workspace/config/access/access-authorization-policy-bundle.json}
+  ACCESS_AUTHORITY_COMMAND: ${ACCESS_AUTHORITY_COMMAND:-/usr/local/bin/access-authority}
+  ACCESS_SIGNER_COMMAND: ${ACCESS_SIGNER_COMMAND:-/usr/local/bin/access-signer}
+  ACCESS_STATE_DIR: ${ACCESS_STATE_DIR:-/workspace/state/access-authority}
+  ACCESS_AUTHORITY_TIMEOUT_S: ${ACCESS_AUTHORITY_TIMEOUT_S:-5}
+  ACCESS_ENTITLEMENT_VERIFIER_COMMAND: ${ACCESS_ENTITLEMENT_VERIFIER_COMMAND:-/usr/local/bin/access-entitlement-verifier}
+  ACCESS_ENTITLEMENT_VERIFIER_TIMEOUT_S: ${ACCESS_ENTITLEMENT_VERIFIER_TIMEOUT_S:-5}
+  ACCESS_CLIENT_TRUST_BUNDLE_FILE: ${ACCESS_CLIENT_TRUST_BUNDLE_FILE:-/workspace/config/access/simulation-client-trust-bundle.json}
+  ACCESS_CLIENT_REPLAY_FILE: ${ACCESS_CLIENT_REPLAY_FILE:-/workspace/state/access-client/consumed-entitlements.log}
+
 x-visual-simulation: &visual-simulation
   build:
     context: .
@@ -21,6 +35,7 @@ services:
       dockerfile: docker/Dockerfile
     image: secure-docking-sim:humble-fortress
     environment:
+      <<: *access-environment
       IGN_PARTITION: docking_baseline
       ROS_DOMAIN_ID: "42"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
@@ -38,6 +53,7 @@ services:
   docking-visual-1:
     <<: *visual-simulation
     environment:
+      <<: *access-environment
       IGN_PARTITION: docking_visual_1
       ROS_DOMAIN_ID: "43"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
@@ -45,6 +61,7 @@ services:
   docking-visual-2:
     <<: *visual-simulation
     environment:
+      <<: *access-environment
       IGN_PARTITION: docking_visual_2
       ROS_DOMAIN_ID: "44"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
@@ -54,6 +71,7 @@ services:
   docking-visual-3:
     <<: *visual-simulation
     environment:
+      <<: *access-environment
       IGN_PARTITION: docking_visual_3
       ROS_DOMAIN_ID: "45"
       RMW_IMPLEMENTATION: rmw_fastrtps_cpp
