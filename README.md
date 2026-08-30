@@ -205,7 +205,7 @@ docker compose -f compose.yaml -f compose.gpu.yaml up docking-sim
 
 ### Test-suite fidelity
 
-The reference environment uses deterministic kinematic motion through Gazebo's
+The executable test environment uses deterministic kinematic motion through Gazebo's
 `SetEntityPose` service. It validates world loading, ROS/Gazebo transport,
 spacecraft motion, state sequencing, and the authorization insertion point. It
 does not yet model thrusters, six-degree-of-freedom GNC, compliant contact,

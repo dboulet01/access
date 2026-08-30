@@ -16,10 +16,10 @@ the core or an adapter; it is not a separate product line.
 - embedded ACCESS authorization policy over verified authority facts
 - signed policy provenance in stage entitlements
 - client authority Trust Bundle and entitlement verifier
-- ROS 2/Gazebo docking reference environment
+- ROS 2/Gazebo executable docking test suite
 - deterministic allow and deny demonstrations
 
-**Exit condition:** The reference environment clearly demonstrates that motion
+**Exit condition:** The executable test suite clearly demonstrates that motion
 cannot cross protected transitions without the required authorization evidence.
 
 ## Phase 2: Portable kernel and protocol

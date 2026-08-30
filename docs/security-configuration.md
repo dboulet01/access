@@ -110,7 +110,7 @@ availability, rotation, revocation, and zeroization behavior.
 
 `ReplayCache` accepts a `ReplayStateBackend`. The included file backend
 synchronizes every consumed identifier and fails closed on malformed records;
-it exists for executable test suites and reference deployments. A production
+it exists for executable test suites and test deployments. A production
 backend must additionally provide atomicity appropriate to its storage,
 rollback detection, integrity and access control, bounded retention, health
 reporting, and tested recovery after power loss or interrupted writes.

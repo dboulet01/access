@@ -54,7 +54,7 @@ launch files.
 ## Test-data rules
 
 Fixture private keys and deterministic entropy sources are permitted only in
-tests and validation assets and must be visibly marked. Production keys,
+tests and test fixtures and must be visibly marked. Production keys,
 tokens, mission identifiers, and operational policy must never be committed.
 
 Tests that accept caller-provided time or entropy must identify those providers
