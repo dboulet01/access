@@ -1,4 +1,3 @@
-use getrandom::fill;
 use serde::Serialize;
 use std::path::Path;
 use thiserror::Error;
@@ -12,6 +11,23 @@ use crate::{
 };
 
 const MAX_CLOCK_SKEW_S: i64 = 30;
+
+/// Supplies cryptographically secure random bytes to the ACCESS session engine.
+///
+/// Flight integrations can provide a platform-qualified random source. The
+/// default implementation uses the operating system source through `getrandom`.
+pub trait RandomSource: Send + Sync {
+    fn fill(&self, destination: &mut [u8]) -> Result<(), String>;
+}
+
+#[derive(Default)]
+pub struct OsRandomSource;
+
+impl RandomSource for OsRandomSource {
+    fn fill(&self, destination: &mut [u8]) -> Result<(), String> {
+        getrandom::fill(destination).map_err(|error| error.to_string())
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub enum AccessScenario {
@@ -105,6 +121,7 @@ pub struct AccessEngine {
     verified_credentials: Vec<VerifiedCredentialEvidence>,
     holder_proof_at_s: Option<i64>,
     scenario: AccessScenario,
+    random_source: Box<dyn RandomSource>,
 }
 
 impl AccessEngine {
@@ -138,7 +155,17 @@ impl AccessEngine {
             verified_credentials: vec![],
             holder_proof_at_s: None,
             scenario: AccessScenario::Nominal,
+            random_source: Box::new(OsRandomSource),
         }
+    }
+
+    /// Replaces the operating-system random source with a platform adapter.
+    ///
+    /// The source must provide unpredictable bytes in flight deployments.
+    /// Deterministic sources are suitable only for conformance tests.
+    pub fn with_random_source(mut self, random_source: impl RandomSource + 'static) -> Self {
+        self.random_source = Box::new(random_source);
+        self
     }
 
     pub fn enable_persistent_state(
@@ -151,6 +178,24 @@ impl AccessEngine {
         self.gate_replay = ReplayCache::persistent(state_dir.join("gate-nonces.log"))?;
         self.consumed_grants = ReplayCache::persistent(state_dir.join("consumed-grants.log"))?;
         Ok(())
+    }
+
+    /// Replaces all replay domains with caller-configured caches.
+    ///
+    /// Production adapters should construct each cache with an independent,
+    /// rollback-resistant `ReplayStateBackend`. Keeping the domains separate
+    /// prevents one protocol role from consuming another role's identifiers.
+    pub fn set_replay_state(
+        &mut self,
+        station_replay: ReplayCache,
+        chaser_replay: ReplayCache,
+        gate_replay: ReplayCache,
+        consumed_grants: ReplayCache,
+    ) {
+        self.station_replay = station_replay;
+        self.chaser_replay = chaser_replay;
+        self.gate_replay = gate_replay;
+        self.consumed_grants = consumed_grants;
     }
 
     pub fn protocol_profile(&self) -> &ProtocolProfile {
@@ -168,14 +213,14 @@ impl AccessEngine {
     ) -> Result<SessionOutcome, SessionError> {
         self.reset();
         self.scenario = scenario;
-        let session_id = format!("access-{}", hex::encode(random_nonce()?));
+        let session_id = format!("access-{}", hex::encode(self.random_nonce()?));
         let request = exchange(
             ProtocolClaims {
                 message_type: MessageType::AccessRequest,
                 issuer: self.chaser.key_id().into(),
                 recipient: self.station.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: None,
                 authorized_stage: None,
                 challenge_nonce: None,
@@ -197,14 +242,14 @@ impl AccessEngine {
         )?;
         self.authorization.identity_verified = true;
 
-        let challenge = random_nonce()?;
+        let challenge = self.random_nonce()?;
         let offer = exchange(
             ProtocolClaims {
                 message_type: MessageType::SessionOffer,
                 issuer: self.station.key_id().into(),
                 recipient: self.chaser.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: Some(session_id.clone()),
                 authorized_stage: None,
                 challenge_nonce: Some(challenge.clone()),
@@ -263,7 +308,7 @@ impl AccessEngine {
                 issuer: self.chaser.key_id().into(),
                 recipient: self.station.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: Some(session_id.clone()),
                 authorized_stage: None,
                 challenge_nonce: Some(challenge),
@@ -415,14 +460,14 @@ impl AccessEngine {
             .session_id
             .clone()
             .ok_or(SessionError::SessionBinding)?;
-        let challenge = random_nonce()?;
+        let challenge = self.random_nonce()?;
         let offer = exchange(
             ProtocolClaims {
                 message_type: MessageType::SessionOffer,
                 issuer: self.station.key_id().into(),
                 recipient: self.chaser.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: Some(session_id.clone()),
                 authorized_stage: None,
                 challenge_nonce: Some(challenge.clone()),
@@ -448,7 +493,7 @@ impl AccessEngine {
                 issuer: self.chaser.key_id().into(),
                 recipient: self.station.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: Some(session_id.clone()),
                 authorized_stage: None,
                 challenge_nonce: Some(challenge),
@@ -531,8 +576,7 @@ impl AccessEngine {
             .authorize_transition(
                 self.chaser.key_id(),
                 self.station.key_id(),
-                &self
-                    .config
+                self.config
                     .protocol_profile
                     .stage_rules
                     .iter()
@@ -556,7 +600,7 @@ impl AccessEngine {
                 return Ok(outcome);
             }
         };
-        let grant_id = format!("grant-{}", hex::encode(random_nonce()?));
+        let grant_id = format!("grant-{}", hex::encode(self.random_nonce()?));
         let expires_at_s = now_s.saturating_add(rule.entitlement_ttl_s as i64);
         let encoded = sign_envelope(
             &ProtocolClaims {
@@ -564,7 +608,7 @@ impl AccessEngine {
                 issuer: self.station.key_id().into(),
                 recipient: self.chaser.key_id().into(),
                 issued_at_s: now_s,
-                nonce: random_nonce()?,
+                nonce: self.random_nonce()?,
                 session_id: Some(session_id.clone()),
                 authorized_stage: Some(stage),
                 challenge_nonce: None,
@@ -680,6 +724,14 @@ impl AccessEngine {
         self.verified_credentials.clear();
         self.holder_proof_at_s = None;
     }
+
+    fn random_nonce(&self) -> Result<Vec<u8>, SessionError> {
+        let mut nonce = vec![0_u8; 32];
+        self.random_source
+            .fill(&mut nonce)
+            .map_err(|_| SessionError::RandomSource)?;
+        Ok(nonce)
+    }
 }
 
 fn exchange(
@@ -692,12 +744,6 @@ fn exchange(
 ) -> Result<VerifiedEnvelope, ProtocolError> {
     let encoded = sign_envelope(&claims, signer)?;
     verify_envelope(&encoded, trust, recipient, replay, now_s, MAX_CLOCK_SKEW_S)
-}
-
-fn random_nonce() -> Result<Vec<u8>, SessionError> {
-    let mut nonce = vec![0_u8; 32];
-    fill(&mut nonce).map_err(|_| SessionError::RandomSource)?;
-    Ok(nonce)
 }
 
 fn state_number(state: DockingState) -> u8 {
@@ -793,6 +839,14 @@ mod tests {
     use super::*;
 
     const NOW_S: i64 = 1_787_900_100;
+
+    struct FailingRandomSource;
+
+    impl RandomSource for FailingRandomSource {
+        fn fill(&self, _destination: &mut [u8]) -> Result<(), String> {
+            Err("qualified random source unavailable".into())
+        }
+    }
 
     fn engine() -> AccessEngine {
         let chaser = IdentityKey::from_seed("odyssey-7", [1; 32]);
@@ -896,6 +950,15 @@ mod tests {
             error,
             SessionError::Protocol(ProtocolError::CredentialExpired)
         ));
+    }
+
+    #[test]
+    fn random_source_failure_prevents_session_authorization() {
+        let error = engine()
+            .with_random_source(FailingRandomSource)
+            .establish_session(NOW_S, AccessScenario::Nominal)
+            .unwrap_err();
+        assert!(matches!(error, SessionError::RandomSource));
     }
 
     #[test]

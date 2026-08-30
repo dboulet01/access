@@ -86,6 +86,7 @@ impl CedarPolicyEngine {
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn authorize_transition(
         &self,
         vehicle_id: &str,
@@ -140,7 +141,7 @@ impl CedarPolicyEngine {
             .authorizer
             .is_authorized(&request, &self.policies, &Entities::empty());
         let diagnostics = format!("{:?}", response.diagnostics());
-        if !response.diagnostics().errors().next().is_none() {
+        if response.diagnostics().errors().next().is_some() {
             return Err(AccessPolicyError::Evaluation {
                 gate: gate.into(),
                 detail: diagnostics,

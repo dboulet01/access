@@ -9,16 +9,16 @@ mod state_machine;
 pub use cedar::{AccessDecision, AccessPolicyError, AccessPolicyMetadata, CedarPolicyEngine};
 pub use protocol::{
     AuthorizedStage, CredentialClaims, IdentityKey, MessageType, PayloadSigner, ProtocolClaims,
-    ProtocolError, ReplayCache, TrustStore, VerifiedEnvelope, issue_credential, sign_envelope,
-    verify_credential, verify_envelope,
+    ProtocolError, ReplayCache, ReplayStateBackend, TrustStore, VerifiedEnvelope, issue_credential,
+    sign_envelope, verify_credential, verify_envelope,
 };
 pub use protocol_profile::{
     ProtocolProfile, ProtocolProfileError, ProtocolRuleDecision, ReadinessEvidence,
     VerifiedCredentialEvidence,
 };
 pub use session::{
-    AccessEngine, AccessEngineConfig, AccessEvent, AccessScenario, SessionError, SessionOutcome,
-    TransitionOutcome,
+    AccessEngine, AccessEngineConfig, AccessEvent, AccessScenario, OsRandomSource, RandomSource,
+    SessionError, SessionOutcome, TransitionOutcome,
 };
 pub use state_machine::{
     AuthorizationContext, DockingEvent, DockingState, TransitionError, reduce,

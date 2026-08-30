@@ -135,36 +135,88 @@ impl TrustStore {
     }
 }
 
+/// Durable consumed-identifier storage used by replay protection.
+///
+/// Implementations must durably commit an identifier before returning success.
+/// Returning an error causes the protected operation to fail closed.
+pub trait ReplayStateBackend: Send {
+    fn load(&mut self) -> Result<Vec<Vec<u8>>, String>;
+    fn append_and_sync(&mut self, value: &[u8]) -> Result<(), String>;
+}
+
+struct FileReplayStateBackend {
+    path: PathBuf,
+}
+
+impl FileReplayStateBackend {
+    fn new(path: impl AsRef<Path>) -> Result<Self, String> {
+        let path = path.as_ref();
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+        }
+        Ok(Self {
+            path: path.to_owned(),
+        })
+    }
+}
+
+impl ReplayStateBackend for FileReplayStateBackend {
+    fn load(&mut self) -> Result<Vec<Vec<u8>>, String> {
+        if !self.path.exists() {
+            return Ok(Vec::new());
+        }
+        let file = OpenOptions::new()
+            .read(true)
+            .open(&self.path)
+            .map_err(|error| error.to_string())?;
+        BufReader::new(file)
+            .lines()
+            .map(|line| {
+                let encoded = line.map_err(|error| error.to_string())?;
+                hex::decode(encoded).map_err(|error| error.to_string())
+            })
+            .collect()
+    }
+
+    fn append_and_sync(&mut self, value: &[u8]) -> Result<(), String> {
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|error| error.to_string())?;
+        writeln!(file, "{}", hex::encode(value)).map_err(|error| error.to_string())?;
+        file.sync_data().map_err(|error| error.to_string())
+    }
+}
+
+/// In-memory replay protection with an optional durable-state backend.
+///
+/// A production integration supplies a rollback-resistant implementation of
+/// `ReplayStateBackend`. `persistent` retains the synchronized append-only file
+/// backend used by the executable test suites.
 #[derive(Default)]
 pub struct ReplayCache {
     consumed: HashSet<Vec<u8>>,
-    journal_path: Option<PathBuf>,
+    backend: Option<Box<dyn ReplayStateBackend>>,
 }
 
 impl ReplayCache {
     pub fn persistent(path: impl AsRef<Path>) -> Result<Self, ProtocolError> {
-        let path = path.as_ref();
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
-        }
-        let mut consumed = HashSet::new();
-        if path.exists() {
-            let file = OpenOptions::new()
-                .read(true)
-                .open(path)
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
-            for line in BufReader::new(file).lines() {
-                let value = hex::decode(
-                    line.map_err(|error| ProtocolError::PersistentState(error.to_string()))?,
-                )
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
-                consumed.insert(value);
-            }
-        }
+        let backend = FileReplayStateBackend::new(path).map_err(ProtocolError::PersistentState)?;
+        Self::with_backend(backend)
+    }
+
+    pub fn with_backend(
+        mut backend: impl ReplayStateBackend + 'static,
+    ) -> Result<Self, ProtocolError> {
+        let consumed = backend
+            .load()
+            .map_err(ProtocolError::PersistentState)?
+            .into_iter()
+            .collect();
         Ok(Self {
             consumed,
-            journal_path: Some(path.to_owned()),
+            backend: Some(Box::new(backend)),
         })
     }
 
@@ -172,23 +224,17 @@ impl ReplayCache {
         if self.consumed.contains(nonce) {
             return Err(ProtocolError::Replay);
         }
-        if let Some(path) = &self.journal_path {
-            let mut file = OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
-            writeln!(file, "{}", hex::encode(nonce))
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
-            file.sync_data()
-                .map_err(|error| ProtocolError::PersistentState(error.to_string()))?;
+        if let Some(backend) = &mut self.backend {
+            backend
+                .append_and_sync(nonce)
+                .map_err(ProtocolError::PersistentState)?;
         }
         self.consumed.insert(nonce.to_vec());
         Ok(())
     }
 
     pub(crate) fn reset_ephemeral(&mut self) {
-        if self.journal_path.is_none() {
+        if self.backend.is_none() {
             self.consumed.clear();
         }
     }
@@ -362,6 +408,18 @@ fn verify_signed_payload(
 mod tests {
     use super::*;
 
+    struct WriteFailingBackend;
+
+    impl ReplayStateBackend for WriteFailingBackend {
+        fn load(&mut self) -> Result<Vec<Vec<u8>>, String> {
+            Ok(Vec::new())
+        }
+
+        fn append_and_sync(&mut self, _value: &[u8]) -> Result<(), String> {
+            Err("durable commit failed".into())
+        }
+    }
+
     #[test]
     fn persistent_replay_cache_survives_restart() {
         let path = std::env::temp_dir().join(format!(
@@ -388,6 +446,35 @@ mod tests {
             Err(ProtocolError::Replay)
         );
         std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn persistent_replay_cache_rejects_corrupt_journal() {
+        let path = std::env::temp_dir().join(format!(
+            "docking-replay-corrupt-{}-{}.log",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, "not-hex\n").unwrap();
+
+        assert!(matches!(
+            ReplayCache::persistent(&path),
+            Err(ProtocolError::PersistentState(_))
+        ));
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn replay_cache_fails_closed_when_durable_commit_fails() {
+        let mut cache = ReplayCache::with_backend(WriteFailingBackend).unwrap();
+        assert!(matches!(
+            cache.consume(b"grant-id"),
+            Err(ProtocolError::PersistentState(_))
+        ));
+        assert!(!cache.consumed.contains(b"grant-id".as_slice()));
     }
 
     fn claims() -> ProtocolClaims {
