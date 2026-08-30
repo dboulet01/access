@@ -1,6 +1,6 @@
 # ACCESS
 
-**Access Control and Credential Evaluation for Space Systems**
+**Access Control and Credential Exchange for Space Systems**
 
 Open, portable, fail-closed authorization for safety-critical interactions
 between spacecraft, stations, servicing vehicles, and robotic systems.
