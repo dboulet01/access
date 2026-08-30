@@ -1,7 +1,9 @@
 # Product Roadmap
 
-This roadmap tracks the work required for a portable, interoperable
-authorization implementation.
+This roadmap tracks the work required to mature the ACCESS authentication and
+authorization core and its flight-software integration adapters. Simulation,
+visualization, and scenario work is accepted only when it produces evidence for
+the core or an adapter; it is not a separate product line.
 
 ## Phase 1: Executable reference model
 
@@ -22,9 +24,13 @@ cannot cross protected transitions without the required authorization evidence.
 
 ## Phase 2: Portable kernel and protocol
 
+**Status:** In progress
+
 - separate normative protocol types from reference-environment concepts
 - publish a versioned CDDL wire specification
 - support caller-provided clock and randomness
+- define injectable, platform-qualified entropy (the Rust core now exposes a
+  `RandomSource`; trusted clock values are already caller-provided to core APIs)
 - define a production durable-state backend beyond the reference journal
 - define revocation, degraded-clock, communication-loss, and recovery behavior
 - provide a stable, reviewed C ABI
@@ -33,6 +39,14 @@ cannot cross protected transitions without the required authorization evidence.
 
 **Exit condition:** A non-ROS consumer can integrate and verify the kernel using
 only the specification, C interface, and conformance vectors.
+
+Required evidence:
+
+- versioned CDDL and canonical encoding rules
+- positive and negative vectors consumed by at least two implementations
+- API/ABI compatibility tests and documented failure contracts
+- deterministic tests using caller-provided time and entropy
+- durability, corruption, rollback, and restart tests for the state backend
 
 ## Phase 3: Interoperability
 
@@ -46,9 +60,13 @@ only the specification, C interface, and conformance vectors.
 **Exit condition:** Two different runtime stacks complete the same authorized
 interaction and reject the same invalid vectors.
 
+Adapter priority is a stable C ABI followed by cFS or F Prime. ROS 2 remains a
+reference integration and validation harness unless separately qualified by an
+integrator.
+
 ## Phase 4: Assurance
 
-- publish a threat model and misuse-case analysis
+- maintain the published threat model and misuse-case analysis
 - add fuzzing and property-based testing
 - model-check the authorization and failure state machines
 - produce reproducible and signed releases with software bills of materials
@@ -58,6 +76,11 @@ interaction and reject the same invalid vectors.
 
 **Exit condition:** Security and safety claims are traceable to public,
 repeatable evidence rather than reference demonstrations alone.
+
+The release gate also requires requirements-to-test traceability, MC/DC or the
+project's selected critical-software coverage rationale, static analysis,
+dependency and license review, reproducible toolchain records, fault-injection
+results, and independent review of cryptographic and state-machine boundaries.
 
 ## Phase 5: Operational pilots
 
@@ -69,3 +92,7 @@ repeatable evidence rather than reference demonstrations alone.
 
 **Exit condition:** At least one external organization uses the open interfaces
 in a representative operational or qualification environment.
+
+Operational acceptance is mission-specific. ACCESS evidence supports, but does
+not replace, the integrator's hazard analysis, software assurance level,
+qualification process, or launch authorization.

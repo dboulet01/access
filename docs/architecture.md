@@ -29,6 +29,21 @@ The portable boundary includes protocol claims, authorization-policy evaluation,
 entitlement issuance and consumption, and deterministic failure behavior.
 Transports, key stores, clocks, dynamics, and actuators connect through adapters.
 
+## Product and test boundaries
+
+The product boundary is intentionally narrower than this repository:
+
+| Boundary | Included components | Assurance target |
+| --- | --- | --- |
+| ACCESS core | Protocol and credential verification, trust and policy evaluation, sessions, entitlements, replay defense, and protected-state reduction | Portable, deterministic, fail-closed, reviewable, and suitable for integration into qualified platforms |
+| ACCESS integration adapters | Stable core API and bindings for flight frameworks, mission transport, trusted time, qualified entropy, durable state, key stores, evidence providers, and enforcement points | Platform-specific assurance with explicit failure and ownership contracts |
+| Executable test suites | ROS 2 messages and nodes, Gazebo world, deterministic controller, dashboard, gateway, Docker, and scenario fixtures | Repeatable functional and interoperability evidence only; not shipped as production ACCESS |
+
+ACCESS does not provide GNC, vehicle dynamics, collision avoidance, secure
+communications, hardware key management, trusted time, sensor qualification,
+or mission safety analysis. Adapters consume those platform services without
+moving their responsibilities into the authorization core.
+
 ## Logical roles
 
 Roles are responsibilities, not required deployment units. An implementation may
@@ -119,18 +134,16 @@ and entitlement semantics, and
 
 ## Package status
 
-| Package or process | Status | Responsibility |
-| --- | --- | --- |
-| `access_core` | Implemented | COSE/CBOR, credential verification, policy evaluation, sessions, entitlements, replay defense, and reducer |
-| `docking_interfaces` | Implemented | State, request, readiness, and local decision contracts |
-| `docking_orchestration` | Implemented | ROS adapters, evidence, controller, launch, dashboard, and smoke monitor |
-| `docking_gazebo` | Baseline | Zero-gravity Fortress world and spacecraft instances |
-| `docking_description` | Baseline | Reusable URDF/Xacro spacecraft description |
-| `access-authority` | Implemented | Co-located AAS core, APS, and AEG reference process |
-| `access-entitlement-verifier` | Implemented | AC authority-trust and replay verifier |
-| `access-signer` | Simulation fixture | Role-bound signer; replaceable with HSM/KMS integration |
-| `docking_basilisk_bridge` | Planned | Optional high-fidelity dynamics bridge |
-| `docking_capture_plugin` | Planned | Compliant contact and capture constraints |
+| Package or process | Product classification | Status | Responsibility |
+| --- | --- | --- | --- |
+| `access_core` | Production product | Implemented reference baseline | COSE/CBOR, credential verification, policy evaluation, sessions, entitlements, replay defense, and reducer |
+| Stable C ABI and flight-framework adapters | Production product | Planned | Integration into existing cFS, F Prime, or equivalent flight software |
+| `access-authority` | Reference product executable | Implemented | Co-located AAS core, APS, and AEG process used to exercise product contracts |
+| `access-entitlement-verifier` | Reference product executable | Implemented | AC authority-trust and replay verifier |
+| `access-signer` | Test fixture | Implemented | Role-bound deterministic-key signer used only by executable tests |
+| `docking_interfaces` | Test suite | Implemented | ROS state, request, readiness, and local decision contracts |
+| `docking_orchestration` | Test suite | Implemented | ROS adapters, evidence simulator, controller, launch, dashboard, gateway, and smoke monitor |
+| `docking_gazebo` | Test suite | Implemented | Zero-gravity world and spacecraft instances |
 
 Run only one station transition authority. Authorization status and dashboard
 topics are telemetry, not authority.

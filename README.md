@@ -50,16 +50,36 @@ Canonical roles, interfaces, and component mappings are defined only in
 The repository currently has two implemented slices:
 
 1. `access_core`, a physics-independent Rust security crate.
-2. A containerized ROS 2 Humble and Gazebo Fortress reference environment.
+2. A containerized ROS 2 Humble and Gazebo Fortress executable integration test
+	suite.
 
 The live reference uses Rust for authentication, session integrity, entitlement
 handling, policy evaluation, and enforcement; and ROS 2/Gazebo
 for integration and simulation. The client independently verifies returned
 entitlements. See [Architecture](docs/architecture.md) for the role mapping.
 
-## Docking reference environment
+## Production product boundary
 
-The simulation provides:
+The ACCESS product is the portable authentication and authorization stack plus
+integration interfaces for existing flight software. Its intended product
+boundary contains protocol verification, credential and trust evaluation,
+policy decisions, narrowly scoped entitlements, replay defense, protected-state
+enforcement, and adapters that connect those functions to mission software.
+
+ROS 2, Gazebo, the docking controller, the web dashboard, the session gateway,
+Docker Compose, and the commercial docking scenario are test suites and test
+fixtures. They exist only to exercise ACCESS in a live, observable system and
+prove integration behavior; they are not deliverable flight GNC, vehicle
+dynamics, mission communications, or operational deployment software.
+
+The repository currently provides evidence for an executable reference model.
+It does not claim flight certification or flight readiness. The controlled work
+and evidence required before such a claim are tracked in
+[Flight readiness](docs/flight-readiness.md) and [Test strategy](docs/test-strategy.md).
+
+## Executable docking integration test suite
+
+The test suite provides:
 
 - a zero-gravity Fortress world with chaser and target spacecraft
 - collision-enabled bodies and visible docking interfaces
@@ -100,7 +120,7 @@ Run the self-terminating smoke test:
 The expected terminal state is `HARD_DOCK_REACHED`. The test advances simulated
 range only after Gazebo acknowledges each pose update.
 
-### Browser visualization
+### Browser test visualization
 
 Start the three-session visual simulation pool and gateway:
 
@@ -165,6 +185,14 @@ The documentation has one source for each concern:
 5. [Commercial refueling scenario](docs/commercial-refueling-scenario.md) — the
 	end-to-end reference use case.
 6. [Roadmap](docs/roadmap.md) — current maturity and planned work.
+7. [Flight readiness](docs/flight-readiness.md) — product boundary, assurance
+	workstreams, evidence gates, and release criteria.
+8. [Test strategy](docs/test-strategy.md) — current verification and required
+	qualification evidence.
+9. [Threat model](docs/threat-model.md) — security objectives, trust boundaries,
+	misuse cases, controls, and residual risks.
+10. [Assurance requirements](docs/assurance-requirements.md) — stable production
+	requirement identifiers and evidence status.
 
 ### GPU override
 
@@ -175,7 +203,7 @@ lidar, and GUI rendering workloads on an NVIDIA Docker host, apply the override:
 docker compose -f compose.yaml -f compose.gpu.yaml up docking-sim
 ```
 
-### Reference fidelity
+### Test-suite fidelity
 
 The reference environment uses deterministic kinematic motion through Gazebo's
 `SetEntityPose` service. It validates world loading, ROS/Gazebo transport,

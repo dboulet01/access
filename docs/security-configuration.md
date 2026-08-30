@@ -13,7 +13,9 @@ The simulation loads signing identities and public trust independently:
 - `config/access/simulation-client-trust-bundle.json` contains the authority IDs
   and entitlement-signing keys accepted by the Odyssey-7 client.
 - `.env.example` documents the runtime selectors. Real `.env` and `keys/`
-  content are ignored by Git.
+  content are ignored by Git. `compose.yaml` explicitly maps these selectors
+  into each ACCESS simulation container; Compose's `.env` parsing alone does
+  not inject variables into a container.
 
 The file provider refuses identity documents that do not declare
 `fixture_only: true`. This prevents it from being presented as a production key
@@ -85,3 +87,34 @@ accepted entitlement nonces to `ACCESS_CLIENT_REPLAY_FILE` before returning
 success.
 Production deployments must replace the fixture signer and harden journal
 integrity, access control, retention, and rollback protection.
+
+## Platform service contracts
+
+The portable Rust API receives time values from its caller for session and
+transition processing. Reference command-line processes use system time when a
+request does not supply `now_s`. A flight adapter must source time from the
+mission's trusted clock, detect loss of validity and unacceptable steps, and
+withhold authorization while time quality is insufficient. A caller-provided
+timestamp is not trusted merely because it is present.
+
+`AccessEngine` uses `OsRandomSource` by default and permits a platform adapter
+through the `RandomSource` trait. A flight implementation must use a qualified
+cryptographic entropy source, monitor its health as required by the platform,
+and treat entropy failure as denial. Deterministic implementations are allowed
+only in conformance tests.
+
+`PayloadSigner` is the key-operation boundary. A production adapter must keep
+private keys inside an approved HSM, secure element, or platform key service;
+enforce key purpose and role; expose no private material; and define timeout,
+availability, rotation, revocation, and zeroization behavior.
+
+`ReplayCache` accepts a `ReplayStateBackend`. The included file backend
+synchronizes every consumed identifier and fails closed on malformed records;
+it exists for executable test suites and reference deployments. A production
+backend must additionally provide atomicity appropriate to its storage,
+rollback detection, integrity and access control, bounded retention, health
+reporting, and tested recovery after power loss or interrupted writes.
+
+These contracts are integration requirements, not capabilities supplied by
+Docker, ROS 2, or the simulation fixtures. Their acceptance evidence is tracked
+in [flight-readiness.md](flight-readiness.md).
