@@ -166,6 +166,12 @@ enum Command {
         now_s: Option<i64>,
         readiness: ReadinessEvidence,
     },
+    RedeemEntitlement {
+        requested_state: u8,
+        entitlement_hex: String,
+        now_s: Option<i64>,
+        readiness: ReadinessEvidence,
+    },
 }
 
 #[derive(Serialize)]
@@ -266,6 +272,20 @@ fn handle_command(engine: &mut AccessEngine, input: &str) -> Response<serde_json
                 readiness,
             } => {
                 let outcome: TransitionOutcome = engine.request_transition(
+                    requested_state,
+                    now_s.unwrap_or_else(unix_time),
+                    &readiness,
+                )?;
+                Ok(serde_json::to_value(outcome)?)
+            }
+            Command::RedeemEntitlement {
+                requested_state,
+                entitlement_hex,
+                now_s,
+                readiness,
+            } => {
+                let outcome: TransitionOutcome = engine.redeem_transition(
+                    &entitlement_hex,
                     requested_state,
                     now_s.unwrap_or_else(unix_time),
                     &readiness,

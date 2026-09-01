@@ -39,6 +39,7 @@ class ChaserAccess(Node):
         self._scenario_id = "nominal"
         self._session_id = None
         self._sequence = 0
+        self._presented_grants = set()
 
         self._protocol_publisher = self.create_publisher(
             String, "/access/chaser_to_station", 10
@@ -66,6 +67,7 @@ class ChaserAccess(Node):
     def _on_prepare(self, _message):
         self._session_id = None
         self._sequence = 0
+        self._presented_grants.clear()
 
     def _on_reset(self, _message):
         self._start_identity_exchange("reset")
@@ -78,6 +80,7 @@ class ChaserAccess(Node):
     def _start_identity_exchange(self, trigger):
         self._session_id = None
         self._sequence = 0
+        self._presented_grants.clear()
         payload = {
             "protocol_version": "1.0",
             "kind": "access_request",
@@ -133,15 +136,16 @@ class ChaserAccess(Node):
             self.get_logger().warning(
                 f"session denied by station: reason={payload.get('reason', 'unknown')}"
             )
-        elif kind == "transition_decision":
+        elif kind == "authorization_grant":
             if not payload.get("approved"):
                 self.get_logger().warning(
-                    "station denied transition: "
+                    "station denied authorization: "
                     f"reason={payload.get('reason', 'unknown')}"
                 )
                 return
             try:
-                expected_stage = STAGE_NAME[int(payload["resulting_state"])]
+                requested_state = int(payload["requested_state"])
+                expected_stage = STAGE_NAME[requested_state]
                 verified = self._entitlement_verifier.request(
                     {
                         "command": "verify_entitlement",
@@ -156,12 +160,44 @@ class ChaserAccess(Node):
                     f"rejected unverified station entitlement: {error}"
                 )
                 return
+            grant_id = verified["grant_id"]
+            self._presented_grants.add(grant_id)
             self.get_logger().info(
                 "verified station entitlement: "
-                f"grant_id={verified['grant_id']} "
+                f"grant_id={grant_id} "
                 f"authority={verified['authority_id']} "
                 f"trust_bundle={verified['trust_bundle_id']}@"
                 f"{verified['trust_bundle_version']}"
+            )
+            self._publish_protocol(
+                {
+                    "protocol_version": "1.0",
+                    "kind": "entitlement_presentation",
+                    "message_id": f"msg-{uuid.uuid4().hex}",
+                    "from": "ODYSSEY-7",
+                    "to": "WAYSTATION-1",
+                    "session_id": self._session_id,
+                    "requested_state": requested_state,
+                    "grant_id": grant_id,
+                    "signed_grant_hex": payload["signed_grant_hex"],
+                    "secure_transport_assumed": True,
+                }
+            )
+        elif kind == "transition_decision":
+            if not payload.get("approved"):
+                self._presented_grants.discard(payload.get("grant_id"))
+                self.get_logger().warning(
+                    "station denied transition: "
+                    f"reason={payload.get('reason', 'unknown')}"
+                )
+                return
+            grant_id = payload.get("grant_id")
+            if grant_id not in self._presented_grants:
+                self.get_logger().error("rejected transition outcome for unknown grant")
+                return
+            self._presented_grants.remove(grant_id)
+            self.get_logger().info(
+                f"station consumed entitlement and permitted transition: grant_id={grant_id}"
             )
 
     def _publish_protocol(self, payload):

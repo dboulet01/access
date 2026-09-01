@@ -186,6 +186,9 @@ class StationAccess(Node):
         if kind == "transition_request":
             self._handle_transition_request(payload)
             return
+        if kind == "entitlement_presentation":
+            self._handle_entitlement_presentation(payload)
+            return
         self.get_logger().warning(f"ignored unknown protocol message kind: {kind}")
 
     def _handle_access_request(self, payload):
@@ -360,7 +363,6 @@ class StationAccess(Node):
             )
             approved = outcome["approved"]
             reason = outcome["reason"]
-            self._state = outcome["resulting_state"]
             self._append_event(
                 {
                     "kind": "evidence",
@@ -379,12 +381,34 @@ class StationAccess(Node):
                     {
                         "id": outcome["grant_id"],
                         "action": action,
-                        "stage": STATE_NAME[self._state],
+                        "stage": STATE_NAME[requested_state],
                         "ttl_s": outcome["entitlement_ttl_s"],
-                        "status": "consumed",
+                        "status": "issued",
                         "rule_id": outcome["rule_id"],
                     }
                 )
+                self._publish_station_protocol(
+                    {
+                        "protocol_version": "1.0",
+                        "kind": "authorization_grant",
+                        "message_id": f"msg-{uuid.uuid4().hex}",
+                        "from": "WAYSTATION-1",
+                        "to": "ODYSSEY-7",
+                        "session_id": self._session_id,
+                        "approved": True,
+                        "reason": reason,
+                        "requested_state": requested_state,
+                        "authority_id": "waystation-1",
+                        "grant_id": outcome["grant_id"],
+                        "grant_expires_at_s": outcome["grant_expires_at_s"],
+                        "signed_grant_hex": outcome["signed_grant_hex"],
+                        "secure_transport_assumed": True,
+                    },
+                    code="AUTHORIZATION_GRANT_OUTBOUND",
+                    summary="Waystation-1 issued entitlement to Odyssey-7",
+                )
+                self._publish_status()
+                return
         except (OSError, RuntimeError, ValueError, KeyError) as error:
             approved = False
             reason = self._session_denial_reason or "DENY_ACCESS_AUTHORITY_ERROR"
@@ -474,6 +498,70 @@ class StationAccess(Node):
             },
             code="TRANSITION_DECISION_OUTBOUND",
             summary="Waystation-1 returned signed transition decision context",
+        )
+        self._publish_status()
+
+    def _handle_entitlement_presentation(self, payload):
+        requested_state = int(payload.get("requested_state", -1))
+        previous = self._state
+        outcome = {}
+        try:
+            if self._readiness is None:
+                raise RuntimeError("station-local readiness evidence is unavailable")
+            outcome = self._client.request(
+                {
+                    "command": "redeem_entitlement",
+                    "requested_state": requested_state,
+                    "entitlement_hex": payload["signed_grant_hex"],
+                    "readiness": self._readiness,
+                }
+            )
+            approved = outcome["approved"]
+            reason = outcome["reason"]
+            self._state = outcome["resulting_state"]
+            for entitlement in self._entitlements:
+                if entitlement["id"] == outcome.get("grant_id"):
+                    entitlement["status"] = "consumed"
+                    break
+            for event in outcome["events"]:
+                self._append_event(self._display_event(event, outcome))
+        except (OSError, RuntimeError, ValueError, KeyError) as error:
+            approved = False
+            reason = "DENY_ENTITLEMENT_REDEMPTION"
+            self.get_logger().error(f"ACCESS entitlement redemption failed: {error}")
+
+        decision = TransitionDecision()
+        decision.approved = approved
+        decision.previous_state = previous
+        decision.resulting_state = self._state
+        decision.authority = "waystation-1"
+        decision.reason = reason
+        decision.grant_id = outcome.get("grant_id") or payload.get("grant_id", "")
+        decision.grant_expires_at_s = outcome.get("grant_expires_at_s") or 0
+        decision.signed_grant_hex = outcome.get("signed_grant_hex") or ""
+        authorization_decision = outcome.get("authorization_decision") or {}
+        authorization_policy = authorization_decision.get("policy") or {}
+        decision.authorization_policy_bundle_id = authorization_policy.get("bundle_id", "")
+        decision.authorization_policy_bundle_version = authorization_policy.get("bundle_version", 0)
+        decision.authorization_policy_sha256 = authorization_policy.get("policy_sha256", "")
+        self._decision_publisher.publish(decision)
+        self._publish_station_protocol(
+            {
+                "protocol_version": "1.0",
+                "kind": "transition_decision",
+                "message_id": f"msg-{uuid.uuid4().hex}",
+                "from": "WAYSTATION-1",
+                "to": "ODYSSEY-7",
+                "session_id": self._session_id,
+                "approved": approved,
+                "reason": reason,
+                "resulting_state": int(self._state),
+                "authority_id": "waystation-1",
+                "grant_id": decision.grant_id,
+                "secure_transport_assumed": True,
+            },
+            code="TRANSITION_DECISION_OUTBOUND",
+            summary="Waystation-1 returned enforced transition outcome",
         )
         self._publish_status()
 

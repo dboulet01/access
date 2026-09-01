@@ -1,4 +1,5 @@
 use serde::Serialize;
+use std::collections::HashMap;
 use std::path::Path;
 use thiserror::Error;
 
@@ -120,8 +121,14 @@ pub struct AccessEngine {
     session_id: Option<String>,
     verified_credentials: Vec<VerifiedCredentialEvidence>,
     holder_proof_at_s: Option<i64>,
+    pending_entitlements: HashMap<String, PendingEntitlement>,
     scenario: AccessScenario,
     random_source: Box<dyn RandomSource>,
+}
+
+struct PendingEntitlement {
+    requested_state: u8,
+    authorization_decision: AccessDecision,
 }
 
 impl AccessEngine {
@@ -154,6 +161,7 @@ impl AccessEngine {
             session_id: None,
             verified_credentials: vec![],
             holder_proof_at_s: None,
+            pending_entitlements: HashMap::new(),
             scenario: AccessScenario::Nominal,
             random_source: Box::new(OsRandomSource),
         }
@@ -454,7 +462,7 @@ impl AccessEngine {
         readiness: &ReadinessEvidence,
     ) -> Result<TransitionOutcome, SessionError> {
         let previous = state_number(self.state);
-        let (event_kind, stage) = transition_for(self.state, requested_state)
+        let (_, stage) = transition_for(self.state, requested_state)
             .ok_or(TransitionError::InvalidTransition)?;
         let session_id = self
             .session_id
@@ -630,45 +638,18 @@ impl AccessEngine {
             },
             &self.station,
         )?;
-        let grant = verify_envelope(
-            &encoded,
-            &self.gate_trust,
-            self.chaser.key_id(),
-            &mut self.gate_replay,
-            now_s,
-            MAX_CLOCK_SKEW_S,
-        )?;
-        if grant.claims.session_id.as_deref() != Some(session_id.as_str())
-            || grant.claims.authorized_stage != Some(stage)
-            || grant.claims.grant_id.as_deref() != Some(grant_id.as_str())
-            || grant
-                .claims
-                .expires_at_s
-                .is_none_or(|expiry| now_s > expiry)
-            || grant.claims.protocol_profile_id.as_deref() != Some(rule.profile_id.as_str())
-            || grant.claims.protocol_profile_version != Some(rule.profile_version)
-            || grant.claims.rule_id.as_deref() != Some(rule.rule_id.as_str())
-            || grant.claims.authorization_policy_bundle_id.as_deref()
-                != Some(authorization_decision.policy.bundle_id.as_str())
-            || grant.claims.authorization_policy_bundle_version
-                != Some(authorization_decision.policy.bundle_version)
-            || grant.claims.authorization_policy_sha256.as_deref()
-                != Some(authorization_decision.policy.policy_sha256.as_str())
-        {
-            return Err(SessionError::GrantMismatch);
-        }
-        self.consumed_grants.consume(grant_id.as_bytes())?;
-        let transition_authorization = AuthorizationContext {
-            identity_verified: self.authorization.identity_verified,
-            session_authorized: self.authorization.session_authorized,
-            docking_authorized: stage == AuthorizedStage::HardDock,
-        };
-        self.state = reduce(self.state, event_kind, transition_authorization)?;
+        self.pending_entitlements.insert(
+            grant_id.clone(),
+            PendingEntitlement {
+                requested_state,
+                authorization_decision: authorization_decision.clone(),
+            },
+        );
         Ok(TransitionOutcome {
             approved: true,
             previous_state: previous,
-            resulting_state: state_number(self.state),
-            reason: "ALLOW_VERIFIED_ACCESS_GRANT".into(),
+            resulting_state: previous,
+            reason: "ALLOW_AUTHORIZATION_GRANT_ISSUED".into(),
             session_id: Some(session_id.clone()),
             protocol_profile_id: Some(rule.profile_id.clone()),
             protocol_profile_version: Some(rule.profile_version),
@@ -702,14 +683,109 @@ impl AccessEngine {
                     Some(self.chaser.key_id()),
                     Some("AUTHORIZATION_GRANT"),
                 ),
-                event(
-                    "AUTHORIZATION_GRANT_CONSUMED",
-                    "Signature, audience, session, stage, freshness, and nonce verified",
-                    Some(self.station.key_id()),
-                    Some("transition-gate"),
-                    Some("GRANT_CONSUMPTION"),
-                ),
             ],
+        })
+    }
+
+    pub fn redeem_transition(
+        &mut self,
+        signed_grant_hex: &str,
+        requested_state: u8,
+        now_s: i64,
+        readiness: &ReadinessEvidence,
+    ) -> Result<TransitionOutcome, SessionError> {
+        let previous = state_number(self.state);
+        let (event_kind, stage) = transition_for(self.state, requested_state)
+            .ok_or(TransitionError::InvalidTransition)?;
+        let session_id = self
+            .session_id
+            .clone()
+            .ok_or(SessionError::SessionBinding)?;
+        let encoded = hex::decode(signed_grant_hex)
+            .map_err(|_| SessionError::Protocol(ProtocolError::InvalidEnvelope))?;
+        let grant = verify_envelope(
+            &encoded,
+            &self.gate_trust,
+            self.chaser.key_id(),
+            &mut self.gate_replay,
+            now_s,
+            MAX_CLOCK_SKEW_S,
+        )?;
+        let grant_id = grant
+            .claims
+            .grant_id
+            .as_deref()
+            .ok_or(SessionError::GrantMismatch)?;
+        let pending = self
+            .pending_entitlements
+            .remove(grant_id)
+            .ok_or(SessionError::GrantMismatch)?;
+        if pending.requested_state != requested_state
+            || grant.claims.session_id.as_deref() != Some(session_id.as_str())
+            || grant.claims.authorized_stage != Some(stage)
+            || grant
+                .claims
+                .expires_at_s
+                .is_none_or(|expiry| now_s > expiry)
+        {
+            return Err(SessionError::GrantMismatch);
+        }
+
+        let (from_stage, to_stage) = transition_names(self.state, requested_state)
+            .ok_or(TransitionError::InvalidTransition)?;
+        let rule = self.config.protocol_profile.evaluate(
+            from_stage,
+            to_stage,
+            now_s,
+            &self.config.trust_bundle_id,
+            self.config.trust_bundle_version,
+            self.config.trust_bundle_issued_at_s,
+            &self.verified_credentials,
+            self.holder_proof_at_s,
+            self.authorization.session_authorized,
+            readiness,
+        )?;
+        if grant.claims.protocol_profile_id.as_deref() != Some(rule.profile_id.as_str())
+            || grant.claims.protocol_profile_version != Some(rule.profile_version)
+            || grant.claims.rule_id.as_deref() != Some(rule.rule_id.as_str())
+            || grant.claims.authorization_policy_bundle_id.as_deref()
+                != Some(pending.authorization_decision.policy.bundle_id.as_str())
+            || grant.claims.authorization_policy_bundle_version
+                != Some(pending.authorization_decision.policy.bundle_version)
+            || grant.claims.authorization_policy_sha256.as_deref()
+                != Some(pending.authorization_decision.policy.policy_sha256.as_str())
+        {
+            return Err(SessionError::GrantMismatch);
+        }
+
+        self.consumed_grants.consume(grant_id.as_bytes())?;
+        let transition_authorization = AuthorizationContext {
+            identity_verified: self.authorization.identity_verified,
+            session_authorized: self.authorization.session_authorized,
+            docking_authorized: stage == AuthorizedStage::HardDock,
+        };
+        self.state = reduce(self.state, event_kind, transition_authorization)?;
+        Ok(TransitionOutcome {
+            approved: true,
+            previous_state: previous,
+            resulting_state: state_number(self.state),
+            reason: "ALLOW_ENTITLEMENT_CONSUMED".into(),
+            session_id: Some(session_id),
+            protocol_profile_id: Some(rule.profile_id),
+            protocol_profile_version: Some(rule.profile_version),
+            rule_id: Some(rule.rule_id),
+            grant_id: Some(grant_id.to_owned()),
+            entitlement_ttl_s: None,
+            grant_expires_at_s: grant.claims.expires_at_s,
+            signed_grant_hex: Some(signed_grant_hex.to_owned()),
+            authorization_decision: Some(pending.authorization_decision),
+            events: vec![event(
+                "AUTHORIZATION_GRANT_CONSUMED",
+                "Entitlement verified and atomically consumed before releasing the action",
+                Some(self.chaser.key_id()),
+                Some("transition-gate"),
+                Some("ENTITLEMENT_PRESENTATION"),
+            )],
         })
     }
 
@@ -723,6 +799,7 @@ impl AccessEngine {
         self.session_id = None;
         self.verified_credentials.clear();
         self.holder_proof_at_s = None;
+        self.pending_entitlements.clear();
     }
 
     fn random_nonce(&self) -> Result<Vec<u8>, SessionError> {
@@ -918,6 +995,25 @@ mod tests {
         }
     }
 
+    fn authorize_and_redeem(
+        engine: &mut AccessEngine,
+        requested_state: u8,
+        now_s: i64,
+        readiness: &ReadinessEvidence,
+    ) -> TransitionOutcome {
+        let issued = engine
+            .request_transition(requested_state, now_s, readiness)
+            .unwrap();
+        engine
+            .redeem_transition(
+                issued.signed_grant_hex.as_deref().unwrap(),
+                requested_state,
+                now_s,
+                readiness,
+            )
+            .unwrap()
+    }
+
     #[test]
     fn cryptographic_session_drives_all_protected_transitions() {
         let mut engine = engine();
@@ -932,12 +1028,21 @@ mod tests {
         );
         for requested in 1..=4 {
             let now_s = NOW_S + requested as i64;
-            assert!(
-                engine
-                    .request_transition(requested, now_s, &readiness(requested, now_s))
-                    .unwrap()
-                    .approved
-            );
+            let issued = engine
+                .request_transition(requested, now_s, &readiness(requested, now_s))
+                .unwrap();
+            assert!(issued.approved);
+            assert_eq!(issued.previous_state, issued.resulting_state);
+            let redeemed = engine
+                .redeem_transition(
+                    issued.signed_grant_hex.as_deref().unwrap(),
+                    requested,
+                    now_s,
+                    &readiness(requested, now_s),
+                )
+                .unwrap();
+            assert!(redeemed.approved);
+            assert_eq!(redeemed.resulting_state, requested);
         }
     }
 
@@ -968,10 +1073,7 @@ mod tests {
             .establish_session(NOW_S, AccessScenario::Nominal)
             .unwrap();
         assert!(
-            engine
-                .request_transition(1, NOW_S + 1, &readiness(1, NOW_S + 1))
-                .unwrap()
-                .approved
+            authorize_and_redeem(&mut engine, 1, NOW_S + 1, &readiness(1, NOW_S + 1),).approved
         );
 
         let mut failed = readiness(2, NOW_S + 2);
@@ -985,6 +1087,35 @@ mod tests {
     }
 
     #[test]
+    fn stale_readiness_blocks_entitlement_redemption() {
+        let mut engine = engine();
+        engine
+            .establish_session(NOW_S, AccessScenario::Nominal)
+            .unwrap();
+        let issued = engine
+            .request_transition(1, NOW_S + 1, &readiness(1, NOW_S + 1))
+            .unwrap();
+
+        let error = engine
+            .redeem_transition(
+                issued.signed_grant_hex.as_deref().unwrap(),
+                1,
+                NOW_S + 3,
+                &readiness(1, NOW_S + 1),
+            )
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            SessionError::ProtocolProfile(ProtocolProfileError::ReadinessStale)
+        ));
+        let replacement = engine
+            .request_transition(1, NOW_S + 4, &readiness(1, NOW_S + 4))
+            .unwrap();
+        assert_eq!(replacement.previous_state, 0);
+    }
+
+    #[test]
     fn incomplete_latches_withhold_hard_dock_grant() {
         let mut engine = engine();
         engine
@@ -993,9 +1124,7 @@ mod tests {
         for requested in 1..=3 {
             let now_s = NOW_S + requested as i64;
             assert!(
-                engine
-                    .request_transition(requested, now_s, &readiness(requested, now_s))
-                    .unwrap()
+                authorize_and_redeem(&mut engine, requested, now_s, &readiness(requested, now_s),)
                     .approved
             );
         }
