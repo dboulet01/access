@@ -26,7 +26,7 @@ a test suite used to exercise these controls; it is not the deployment model.
 | Credential and trust configuration | Bundles, policy, versions, key status | Signed distribution, authorized activation, monotonic versions, rollback prevention, staged rotation |
 | AAS to APS | Normalized authorization facts | Only facts established by authentication code; typed contract; deny on missing facts |
 | AEP to AAS/AEG | Readiness and safety evidence | Authenticated local source, freshness, quality, provenance, mandatory-condition enforcement |
-| AAS/AEG to protected action | Entitlement and action request | Atomic verify-and-consume, local condition recheck, single authority owner |
+| AC to AEG to protected action | Entitlement presentation and action invocation | Recipient and action binding, atomic verify-and-consume, local condition recheck, single authority owner |
 | Core to platform services | Time, entropy, signing, durable state, audit | Qualified adapters with explicit failure, deadline, recovery, and health contracts |
 | Operator and maintenance interfaces | Configuration and recovery commands | Strong authentication, least privilege, two-person controls where required, immutable audit |
 

@@ -118,14 +118,18 @@ requester are not accepted as facts.
 
 Each allow binds the ACCESS authorization policy bundle ID, version, and source
 SHA-256 digest into the signed entitlement alongside the protocol profile and
-matched rule. The AEG verifies those bindings and atomically consumes the
-entitlement before releasing one protected transition. The AC independently
-verifies the returned entitlement against its authority Trust Bundle.
+matched rule. The AC verifies the issued entitlement against its authority Trust
+Bundle and presents it when invoking the approved action. The AEG verifies the
+bindings, rechecks local conditions, and atomically consumes the entitlement
+before releasing one protected transition.
 
 ## Outcomes
 
-- `approved: true`: all required facts and invariants passed; a signed
-   entitlement and policy provenance are present.
+- authorization allowed: all required facts and invariants passed; a signed
+   entitlement and policy provenance are returned to the AC without releasing
+   the action.
+- redemption accepted: the AEG verified and consumed the presented entitlement
+   before releasing the action.
 - `approved: false`: the authority rejected the request and returns a stable
    reason code plus available rule and policy context.
 - authority processing or configuration failure: the JSON-lines request fails
@@ -151,8 +155,8 @@ The station enforcement point verifies the COSE signature and protected algorith
 headers, checks every binding, rechecks required local readiness, and records
 the entitlement ID in durable replay state before allowing the action.
 
-The AC independently verifies the returned entitlement before accepting an
-approved decision. See [security-configuration.md](security-configuration.md)
+The AC independently verifies the issued entitlement before presenting it for
+enforcement. See [security-configuration.md](security-configuration.md)
 for authority Trust Bundle and replay requirements. The docking-specific policy
 and enforcement walkthrough is in
 [commercial-refueling-scenario.md](commercial-refueling-scenario.md).

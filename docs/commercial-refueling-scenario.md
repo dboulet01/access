@@ -78,10 +78,13 @@ sequenceDiagram
     AAS->>AAS: authenticate bindings
     AAS->>APS: verified transition facts
     APS-->>AAS: permit or deny plus provenance
-    AAS->>AEG: signed entitlement
+    AAS-->>AC: authorization_grant
+    AC->>AC: verify authority, recipient, session, stage, expiry
+    AC->>AEG: entitlement_presentation
+    AEP-->>AEG: current station-local readiness
+    AEG->>AEG: verify and atomically consume entitlement
     AEG-->>AAS: enforced transition outcome
-    AAS-->>AC: outcome plus entitlement
-    AC->>AC: verify authority, recipient, session, stage, expiry, replay
+    AAS-->>AC: transition_decision
   end
 ```
 
@@ -113,8 +116,9 @@ the authenticated claim values satisfy the active ACCESS policy rules.
 | `0.040 m`, `SOFT_CAPTURE -> HARD_DOCK` | Soft capture, latch readiness, and stable relative motion pass | `engage_hard_dock` entitlement is consumed |
 
 Each allow requires both an ACCESS policy permit and successful protocol/safety
-invariants. The station consumes the signed entitlement at the AEG before state
-progression; the client verifies the returned copy before accepting the result.
+invariants. The client verifies and presents the signed entitlement for the
+requested transition. The station AEG rechecks local readiness, consumes the
+entitlement before state progression, and returns the enforced result.
 Detailed bindings are defined in
 [authorization-policy.md](authorization-policy.md).
 

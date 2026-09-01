@@ -14,9 +14,12 @@ flowchart LR
     AAS -->|verified facts| APS[APS: Policy Service]
     POLICY[Ground-managed ACCESS policy bundle] --> APS
     APS -->|permit or deny| AAS
-    AAS -->|signed entitlement| AEG[AEG: Enforcement Gateway]
+    AAS -->|signed entitlement| AC
+    AC -->|entitlement presentation| AEG[AEG: Enforcement Gateway]
+    AEP -->|current local evidence| AEG
     AEG -->|authorized transition| ACT[Actuation or resource access]
-    AAS -->|decision + entitlement| AC
+    AEG -->|enforced outcome| AAS
+    AAS -->|transition decision| AC
     CLIENT_TRUST[Client authority Trust Bundle] --> AC
     AAS --> AUDIT[Audit evidence]
 ```
@@ -51,7 +54,7 @@ co-locate roles if their trust boundaries and interfaces remain explicit.
 
 | ID | Role | Responsibility | Security state owned |
 | --- | --- | --- | --- |
-| AC | ACCESS Client | Requests authority and verifies returned entitlements against local authority trust before accepting them | Active session binding and accepted-entitlement replay state |
+| AC | ACCESS Client | Requests authority, verifies issued entitlements against local authority trust, and presents them when invoking protected actions | Active session binding and accepted-entitlement replay state |
 | AAS | ACCESS Authority Service | Terminates ACCESS requests, authenticates evidence, manages sessions, invokes policy, and issues signed decisions and entitlements | Session, request replay, and decision state |
 | APS | ACCESS Policy Service | Evaluates use-case policy over facts established by the AAS; it does not authenticate requester-supplied facts | Active policy bundle and decision metadata |
 | AEG | ACCESS Enforcement Gateway | Verifies and atomically consumes an entitlement, rechecks mandatory local conditions, and releases one protected transition or action | Consumed-entitlement state and protected state machine |
@@ -82,9 +85,9 @@ The reference co-locates AAS, APS, and AEG security logic in the Rust
 
 The Python station adapter delegates to the Rust authority through newline-
 delimited JSON. The Rust process authenticates evidence, maps verified facts into
-the APS, signs the resulting entitlement, verifies and consumes it at the embedded
-AEG, advances the protected state, and returns an enforced decision. The client
-verifies the returned copy independently before accepting the authority result.
+the APS, and signs an entitlement returned to the client. The client verifies and
+presents that entitlement. The embedded AEG rechecks local conditions, atomically
+consumes the grant, advances protected state, and returns an enforced decision.
 
 ```mermaid
 flowchart LR
@@ -93,9 +96,13 @@ flowchart LR
     READY[AEP: readiness_monitor] -->|/docking/readiness| STATION
     STATION -->|JSON-lines request| AUTH[AAS core + APS + AEG: access-authority]
     AUTH -->|signing request| SIGNER[access-signer]
-    AUTH -->|enforced decision| STATION
-    STATION -->|decision + entitlement| CLIENT
+    AUTH -->|authorization grant| STATION
+    STATION -->|authorization grant| CLIENT
     CLIENT -->|verify entitlement| VERIFY[AC verifier]
+    CLIENT -->|entitlement presentation| STATION
+    STATION -->|redeem entitlement| AUTH
+    AUTH -->|enforced decision| STATION
+    STATION -->|transition decision| CLIENT
     STATION -->|enforced TransitionDecision| CTRL
     CTRL -->|SetEntityPose| GZ[Gazebo Fortress]
 ```
@@ -109,10 +116,10 @@ station adapter on that local integration channel.
 | Interface | Direction | Purpose |
 | --- | --- | --- |
 | `access.request` | AC to AAS | Session and protected-action requests |
-| `access.decision` | AAS to AC | Session results and transition decisions with entitlements |
+| `access.decision` | AAS to AC | Session results, authorization grants, and enforced transition outcomes |
 | `access.policy` | AAS to APS | Verified authorization facts and policy result |
 | `access.evidence` | AEP to AAS/AEG | Station-local readiness and safety evidence |
-| `access.enforcement` | AAS to AEG | Entitlement presented for one protected action |
+| `access.enforcement` | AC to AEG | Verified entitlement presented to invoke one protected action |
 
 The reference maps peer interfaces to `/access/chaser_to_station` and
 `/access/station_to_chaser`. `/docking/transition_decision` is a local adapter

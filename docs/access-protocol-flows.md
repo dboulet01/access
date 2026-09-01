@@ -17,10 +17,10 @@ component mappings are defined in [architecture.md](architecture.md). This
 document uses those logical roles to describe protocol ordering; co-located
 roles do not imply an on-wire call.
 
-The peer-facing interfaces are `access.request` from AC to AAS and
-`access.decision` from AAS to AC. `access.policy`, `access.evidence`, and
-`access.enforcement` are authority-side logical interfaces and may remain
-in-process.
+The peer-facing interfaces are `access.request` from AC to AAS,
+`access.decision` from AAS to AC, and `access.enforcement` from AC to AEG.
+`access.policy` and `access.evidence` are host-side logical interfaces and may
+remain in-process.
 
 ## Message primitives
 
@@ -30,6 +30,8 @@ Core message primitives:
 - session_authorized
 - session_denied
 - transition_request
+- authorization_grant
+- entitlement_presentation
 - transition_decision
 
 Credential exchange extension primitive:
@@ -68,10 +70,13 @@ sequenceDiagram
     AC->>AAS: access.request transition_request
     AAS->>APS: access.policy verified facts
     APS-->>AAS: permit/deny + provenance
-    AAS->>AEG: access.enforcement signed entitlement
+    AAS-->>AC: access.decision authorization_grant
+    AC->>AC: verify authority, recipient, session, action, expiry
+    AC->>AEG: access.enforcement entitlement_presentation
+    AEP-->>AEG: fresh local readiness evidence
+    AEG->>AEG: verify and atomically consume entitlement
     AEG-->>AAS: enforced transition outcome
-    AAS-->>AC: access.decision outcome + entitlement
-    AC->>AC: verify authority, recipient, session, stage, expiry, replay
+    AAS-->>AC: access.decision transition_decision
   end
 ```
 
@@ -91,8 +96,9 @@ exactly where policy is assessed.
 | 2 | establish(context) | AAS -> APS (`access.policy`) | authenticated credential, holder-proof, and scenario facts | Assessment A: ACCESS session policy over facts established by Rust verification |
 | 3 | session_authorized or session_denied | AAS -> AC (`access.decision`) | `protocol_version`, `kind`, `message_id`, `from`, `to`, plus `session_id` and authorization-policy bundle metadata on allow or `reason` on deny | none; result of Assessment A |
 | 4 | transition_request | AC -> AAS (`access.request`) | `protocol_version`, `kind`, `message_id`, `sequence`, `from`, `to`, `session_id`, `requested_state`, `reason` | none; request intake and session binding checks |
-| 5 | policy and enforcement | AAS -> APS -> AEG | authenticated session, requested stage, and fresh station-local evidence | APS assesses ACCESS policy; AEG verifies and consumes the entitlement before releasing the transition |
-| 6 | transition_decision | AAS -> AC (`access.decision`) | bindings, `approved`, `reason`, `resulting_state`, signed entitlement, and authorization-policy provenance | AC accepts an allow only after local Trust Bundle and entitlement verification |
+| 5 | authorization_grant | AAS -> AC (`access.decision`) | recipient, session, action, expiry, unique grant ID, and policy provenance | AC verifies the entitlement against its local authority Trust Bundle |
+| 6 | entitlement_presentation | AC -> AEG (`access.enforcement`) | signed entitlement and the previously requested action | AEG verifies bindings, rechecks current local conditions, and atomically consumes the grant |
+| 7 | transition_decision | AAS -> AC (`access.decision`) | `approved`, `reason`, `resulting_state`, and consumed grant ID | AC binds the enforced outcome to the entitlement it presented |
 
 Credential carriage modes for SF1:
 

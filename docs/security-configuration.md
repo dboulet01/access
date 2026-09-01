@@ -46,7 +46,7 @@ Three configuration domains are intentionally separate:
 | ACCESS authorization policy bundle | Which actions may an authenticated principal perform under current verified conditions? | APS |
 | Client authority Trust Bundle | Which authorities and keys may issue entitlements to this client? | AC verifier |
 
-The client verifier rejects an approved response unless the entitlement is an
+The client verifier rejects an authorization grant unless the entitlement is an
 Ed25519 COSE entitlement signed by the expected trusted authority and
 bound to the client recipient, active session, requested stage, and validity
 window. It durably rejects replay. This is similar to configured issuer/key
