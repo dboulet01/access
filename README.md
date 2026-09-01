@@ -172,6 +172,10 @@ cargo test --workspace
 
 ## Documentation guide
 
+For a concise, stakeholder-facing introduction, open the
+[ACCESS visual flyer](docs/access-flyer.html) or download the
+[scrollable e-flyer PDF](docs/ACCESS-project-flyer.pdf).
+
 The documentation has one source for each concern:
 
 1. [Architecture](docs/architecture.md) — canonical roles, interfaces, trust

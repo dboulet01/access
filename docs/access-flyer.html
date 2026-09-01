@@ -1,0 +1,680 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="The ACCESS Protocol enables autonomous identity, credential exchange, and access decisions during spacecraft interactions.">
+  <title>ACCESS Protocol | Autonomous Spacecraft Trust and Access</title>
+  <style>
+    :root {
+      --black: #080c0e;
+      --graphite: #10171a;
+      --paper: #e9f0f2;
+      --white: #e9f0f2;
+      --cream: #f7e8c4;
+      --steel: #82949b;
+      --line: #2a393e;
+      --cyan: #5de1e6;
+      --cyan-ink: #00636d;
+      --amber: #f4ba4b;
+      --amber-ink: #875500;
+      --blue: #6caee8;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--black);
+      background: var(--black);
+      font-family: "IBM Plex Mono", "Cascadia Mono", monospace;
+      letter-spacing: 0;
+    }
+
+    a { color: inherit; }
+
+    .sheet {
+      width: min(1240px, 100%);
+      margin: 0 auto;
+      overflow: hidden;
+      background: var(--paper);
+      box-shadow: 0 24px 80px #07101240;
+    }
+
+    .hero {
+      position: relative;
+      min-height: min(720px, 78vh);
+      padding: 28px clamp(24px, 5vw, 68px) 52px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      color: var(--white);
+      background-image:
+        linear-gradient(90deg, #06090ad9 0%, #06090a9e 47%, #06090a12 78%),
+        linear-gradient(0deg, #06090ae8 0%, transparent 45%),
+        url("assets/iss-cygnus-capture.jpg");
+      background-size: cover;
+      background-position: center 47%;
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      opacity: .16;
+      background: repeating-linear-gradient(0deg, transparent 0 5px, #d7faff 6px);
+      mix-blend-mode: screen;
+    }
+
+    .hero-content,
+    .image-credit { position: relative; z-index: 1; }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--cyan-ink);
+      font: 700 12px/1.2 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1 {
+      margin-bottom: 2px;
+      font-family: "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      font-size: clamp(96px, 17vw, 218px);
+      font-weight: 700;
+      line-height: .72;
+      text-transform: uppercase;
+    }
+
+    .protocol-word {
+      display: block;
+      margin-bottom: 18px;
+      color: var(--cyan);
+      font: 700 clamp(15px, 1.5vw, 20px)/1 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .expansion {
+      max-width: 670px;
+      margin: 18px 0 34px;
+      color: #d3ddda;
+      font: 500 clamp(12px, 1.5vw, 17px)/1.45 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .expansion strong { color: var(--amber); }
+
+    .promise {
+      max-width: 800px;
+      margin: 0;
+      font: 600 clamp(28px, 4vw, 56px)/1.02 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .promise em { color: var(--cyan); font-style: normal; }
+
+    .image-credit {
+      position: absolute;
+      right: 18px;
+      bottom: 15px;
+      color: #d3ddda;
+      font: 500 8px/1.2 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+      writing-mode: vertical-rl;
+    }
+
+    .question-band {
+      display: grid;
+      grid-template-columns: .7fr 2.3fr;
+      gap: clamp(24px, 5vw, 72px);
+      align-items: start;
+      padding: 42px clamp(24px, 5vw, 68px);
+      color: var(--black);
+      background: var(--amber);
+    }
+
+    .section-number {
+      font: 700 11px/1 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .question-band blockquote {
+      margin: 0;
+      font: 650 clamp(28px, 4vw, 52px)/1.05 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .question-band em {
+      color: var(--cream);
+      background: transparent;
+      font-weight: 800;
+      font-style: normal;
+      text-decoration: none;
+    }
+
+    .section {
+      padding: 58px clamp(24px, 5vw, 68px);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .section-heading {
+      display: grid;
+      grid-template-columns: .7fr 2.3fr;
+      gap: clamp(24px, 5vw, 72px);
+      margin-bottom: 42px;
+    }
+
+    .section-heading h2 {
+      max-width: 760px;
+      margin-bottom: 0;
+      font: 650 clamp(34px, 5vw, 64px)/.98 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .section-heading h2 span { color: var(--amber); }
+
+    .layers {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--black);
+      border-bottom: 1px solid var(--black);
+    }
+
+    .layer {
+      min-width: 0;
+      padding: 26px 24px 28px 0;
+    }
+
+    .layer + .layer {
+      padding-left: 24px;
+      border-left: 1px solid var(--black);
+    }
+
+    .layer-label {
+      display: inline-block;
+      margin-bottom: 32px;
+      padding: 6px 8px;
+      color: var(--paper);
+      background: var(--black);
+      font: 700 9px/1 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .layer.access .layer-label { color: var(--black); background: var(--cyan); }
+
+    .layer h3 {
+      margin-bottom: 10px;
+      font: 650 25px/1 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .layer p {
+      margin-bottom: 0;
+      color: #364547;
+      font-size: 14px;
+      line-height: 1.55;
+    }
+
+    .signal {
+      display: grid;
+      grid-template-columns: 1.4fr .6fr;
+      gap: 48px;
+      align-items: end;
+      margin-top: 48px;
+    }
+
+    .signal p {
+      max-width: 760px;
+      margin-bottom: 0;
+      font-size: 20px;
+      line-height: 1.45;
+    }
+
+    .signal p strong {
+      text-decoration-line: underline;
+      text-decoration-color: var(--blue);
+      text-decoration-thickness: 2px;
+      text-underline-offset: 3px;
+      text-decoration-skip-ink: auto;
+    }
+
+    .stat {
+      padding-left: 20px;
+      border-left: 6px solid var(--cyan-ink);
+    }
+
+    .stat strong {
+      display: block;
+      font: 700 60px/.8 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+    }
+
+    .stat span {
+      display: block;
+      margin-top: 12px;
+      color: #465658;
+      font: 700 9px/1.4 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .authorization {
+      color: var(--white);
+      background: var(--graphite);
+    }
+
+    .authorization .section-heading h2 span { color: var(--amber); }
+
+    .flow-roles {
+      margin: 0 0 24px;
+      color: #a9b7b8;
+      font: 700 11px/1.5 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .flow-roles strong { color: var(--cyan); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      counter-reset: access-step;
+    }
+
+    .flow li {
+      position: relative;
+      min-height: 165px;
+      padding: 58px 20px 20px 0;
+      border-top: 3px solid #425054;
+      counter-increment: access-step;
+    }
+
+    .flow li + li { padding-left: 20px; }
+
+    .flow li::before {
+      content: "0" counter(access-step);
+      position: absolute;
+      top: 13px;
+      color: var(--cyan);
+      font: 700 12px/1 "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .flow li::after {
+      content: "";
+      position: absolute;
+      top: -7px;
+      left: 0;
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 14px #5de1e688;
+    }
+
+    .flow strong {
+      display: block;
+      margin-bottom: 9px;
+      font: 650 20px/1 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .flow span { color: #a9b7b8; font-size: 12px; line-height: 1.45; }
+
+    .outcome {
+      display: flex;
+      justify-content: space-between;
+      gap: 28px;
+      align-items: center;
+      margin-top: 30px;
+      padding: 20px 22px;
+      border: 1px solid #526165;
+      border-left: 7px solid var(--amber);
+    }
+
+    .outcome strong {
+      font: 650 24px/1 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .outcome span {
+      color: var(--amber);
+      font: 700 10px/1.4 "Cascadia Mono", "Consolas", monospace;
+      text-align: right;
+      text-transform: uppercase;
+    }
+
+    .proof-grid {
+      display: grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap: 52px;
+      align-items: start;
+    }
+
+    .proof-grid h2 {
+      margin-bottom: 26px;
+      font: 650 44px/1 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .checks {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 28px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .checks li {
+      position: relative;
+      padding: 11px 0 11px 27px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .checks li::before {
+      content: "+";
+      position: absolute;
+      left: 0;
+      color: var(--cyan-ink);
+      font: 800 18px/1 "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .maturity {
+      padding: 24px;
+      color: var(--white);
+      background: var(--black);
+    }
+
+    .maturity .status {
+      display: inline-block;
+      margin-bottom: 22px;
+      padding: 6px 8px;
+      color: var(--black);
+      background: var(--cyan);
+      font: 800 9px/1 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    .maturity h3 {
+      margin-bottom: 12px;
+      font: 650 25px/1 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    .maturity p { margin-bottom: 0; color: #aebbbc; font-size: 12px; line-height: 1.55; }
+
+    .uses {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 34px;
+    }
+
+    .uses span {
+      padding: 8px 10px;
+      border: 1px solid #8c9b99;
+      font: 700 9px/1 "Cascadia Mono", "Consolas", monospace;
+      text-transform: uppercase;
+    }
+
+    footer {
+      display: grid;
+      grid-template-columns: 1.4fr .6fr;
+      gap: 40px;
+      padding: 44px clamp(24px, 5vw, 68px) 48px;
+      color: var(--black);
+      background: var(--amber);
+    }
+
+    footer h2 {
+      margin-bottom: 10px;
+      font: 700 clamp(36px, 5vw, 64px)/.95 "Bahnschrift Condensed", "Arial Narrow", sans-serif;
+      text-transform: uppercase;
+    }
+
+    footer p { max-width: 650px; margin-bottom: 0; font-size: 14px; line-height: 1.5; }
+
+    .footer-links {
+      display: grid;
+      align-content: end;
+      gap: 10px;
+    }
+
+    .footer-links a {
+      padding: 12px 14px;
+      border: 1px solid var(--black);
+      font: 700 10px/1 "Cascadia Mono", "Consolas", monospace;
+      text-align: center;
+      text-decoration: none;
+      text-transform: uppercase;
+    }
+
+    .footer-links a:first-child { color: var(--white); background: var(--black); border-color: var(--black); }
+    .footer-links a:hover { color: var(--black); background: var(--cyan); border-color: var(--cyan); }
+    footer .eyebrow { color: var(--black); }
+
+    .sources {
+      grid-column: 1 / -1;
+      padding-top: 22px;
+      border-top: 1px solid #080c0e66;
+      color: #263438;
+      font: 600 8px/1.55 "Cascadia Mono", "Consolas", monospace;
+    }
+
+    .sources a { text-underline-offset: 2px; }
+
+    @media (max-width: 760px) {
+      .hero { min-height: 680px; background-position: 62% center; }
+      .expansion { max-width: 300px; }
+      .question-band,
+      .section-heading { grid-template-columns: 1fr; gap: 16px; }
+      .layers,
+      .signal,
+      .proof-grid,
+      footer { grid-template-columns: 1fr; }
+      .layer + .layer { padding-left: 0; border-top: 1px solid var(--black); border-left: 0; }
+      .layer { padding: 24px 0; }
+      .layer-label { margin-bottom: 18px; }
+      .flow { grid-template-columns: 1fr; }
+      .flow li { min-height: auto; padding: 20px 0 20px 58px; border-top: 0; border-left: 3px solid #425054; }
+      .flow li + li { padding-left: 58px; }
+      .flow li::before { top: 24px; left: 18px; }
+      .flow li::after { top: 25px; left: -7px; }
+      .outcome { align-items: flex-start; flex-direction: column; }
+      .outcome span { text-align: left; }
+      .checks { grid-template-columns: 1fr; }
+      .footer-links { align-content: start; }
+    }
+
+    @media print {
+      @page { size: Letter portrait; margin: 0; }
+
+      body { background: var(--amber); print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+      .sheet {
+        width: 816px;
+        height: 1056px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: none;
+      }
+      .hero { min-height: 180px; padding: 16px 38px; }
+      .protocol-word { margin-bottom: 6px; font-size: 12px; }
+      h1 { font-size: 72px; }
+      .expansion { margin: 6px 0 10px; font-size: 9px; }
+      .promise { max-width: 586px; font-size: 22px; }
+      .question-band { display: block; padding: 12px 51px; }
+      .question-band .section-number { display: block; margin-bottom: 6px; }
+      .question-band blockquote { font-size: 18px; }
+      .section { padding: 16px 51px; }
+      .section-heading { display: block; margin-bottom: 12px; }
+      .section-heading .section-number { display: block; margin-bottom: 6px; color: var(--cyan-ink); }
+      .authorization .section-number { color: var(--cyan); }
+      .section-heading h2 { font-size: 23px; }
+      .layers { grid-template-columns: repeat(3, 1fr); }
+      .layer { padding: 7px 8px 8px 0; }
+      .layer + .layer { padding-left: 8px; border-top: 0; border-left: 1px solid var(--black); }
+      .layer-label { margin-bottom: 5px; font-size: 7px; }
+      .layer h3 { margin-bottom: 3px; font-size: 12px; }
+      .layer p { font-size: 7.5px; line-height: 1.35; }
+      .signal { grid-template-columns: 1.4fr .6fr; gap: 16px; margin-top: 8px; }
+      .signal p { font-size: 8px; }
+      .stat strong { font-size: 30px; }
+      .stat span { margin-top: 4px; font-size: 7px; }
+      .authorization { padding-top: 14px; padding-bottom: 14px; }
+      .flow-roles { margin-bottom: 10px; font-size: 8px; }
+      .flow { grid-template-columns: repeat(5, 1fr); }
+      .flow li { min-height: 72px; padding: 25px 7px 5px 0; }
+      .flow li + li { padding-left: 7px; }
+      .flow li::before { top: 5px; font-size: 8px; }
+      .flow strong { margin-bottom: 3px; font-size: 9.5px; }
+      .flow span { font-size: 7px; line-height: 1.35; }
+      .outcome { margin-top: 8px; padding: 6px 8px; }
+      .outcome strong { font-size: 11px; }
+      .outcome span { font-size: 6.5px; }
+      .proof-grid { grid-template-columns: 1.1fr .9fr; gap: 17px; }
+      .proof-grid h2 { margin-bottom: 7px; font-size: 20px; }
+      .checks { gap: 3px 10px; }
+      .checks li { padding: 2px 0 2px 10px; font-size: 7.5px; }
+      .checks li::before { font-size: 9px; }
+      .maturity { padding: 8px; }
+      .maturity .status { margin-bottom: 5px; font-size: 6.5px; }
+      .maturity h3 { margin-bottom: 3px; font-size: 12px; }
+      .maturity p { font-size: 7.5px; line-height: 1.35; }
+      .uses { margin-top: 6px; gap: 3px; }
+      .uses span { padding: 3px 4px; font-size: 7px; }
+      footer { position: relative; flex: 1; min-height: 95px; grid-template-columns: 1.4fr .6fr; gap: 12px; padding: 8px 51px 28px; }
+      footer h2 { margin-bottom: 3px; font-size: 21px; }
+      footer p { font-size: 7.5px; }
+      .footer-links { gap: 3px; }
+      .footer-links a { padding: 4px; font-size: 7px; }
+      .sources {
+        position: absolute;
+        right: 51px;
+        bottom: 8px;
+        left: 51px;
+        padding-top: 4px;
+        font-size: 6px;
+        line-height: 1.3;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="sheet">
+    <section class="hero" aria-labelledby="access-title">
+      <div class="hero-content">
+        <span class="protocol-word">Open Protocol</span>
+        <h1 id="access-title">ACCESS</h1>
+        <p class="expansion"><strong>A</strong>ccess <strong>C</strong>ontrol and <strong>C</strong>redential <strong>E</strong>xchange for <strong>S</strong>pace <strong>S</strong>ystems</p>
+        <p class="promise">Establish trust. Exchange credentials.<br><em>Enforce bounded access. Autonomously.</em></p>
+      </div>
+
+      <p class="image-credit">NASA / Cygnus at the International Space Station</p>
+    </section>
+
+    <section class="question-band" aria-label="The core authorization question">
+      <span class="section-number">The question / 01</span>
+      <blockquote>May this independently operated vehicle perform this specific action, <em>here, now, under these constraints?</em></blockquote>
+    </section>
+
+    <section class="section" aria-labelledby="gap-title">
+      <div class="section-heading">
+        <span class="section-number">The gap / 02</span>
+        <h2 id="gap-title">Space is standardizing how systems connect, but not yet how they <span>trust and authorize one another.</span></h2>
+      </div>
+
+      <div class="layers">
+        <article class="layer">
+          <span class="layer-label">Existing layer</span>
+          <h3>Secure the link</h3>
+          <p>CCSDS security protects commands and data between established endpoints.</p>
+        </article>
+        <article class="layer">
+          <span class="layer-label">Existing layer</span>
+          <h3>Enable the maneuver</h3>
+          <p>RPO, navigation, docking standards, certification, and safety logic enable compatible maneuvers.</p>
+        </article>
+        <article class="layer access">
+          <span class="layer-label">ACCESS Protocol</span>
+          <h3>Authenticate and authorize</h3>
+          <p>ACCESS verifies peer identity and grants bounded, single-use authority for a specific action under current conditions.</p>
+        </article>
+      </div>
+
+      <div class="signal">
+        <p>Crew Dragon, Mission Extension Vehicles, and ELSA-d show that autonomous rendezvous, docking, capture, and servicing are operational today. Yet trust and permission still rely on tightly integrated missions and bilateral agreements. <strong>As operators, spacecraft, and robots multiply, authentication and authorization must become autonomous.</strong></p>
+        <div class="stat">
+          <strong>524</strong>
+          <span>ISAM capability entries cataloged by NASA in 2025, across 145 developer profiles</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section authorization" aria-labelledby="flow-title">
+      <div class="section-heading">
+        <span class="section-number">The protocol flow / 03</span>
+        <h2 id="flow-title"><span>Authenticate</span> the encounter. Then <span>authorize</span> the actions.</h2>
+      </div>
+
+      <p class="flow-roles"><strong>Visiting spacecraft:</strong> ACCESS Client (AC) &nbsp;/&nbsp; <strong>Host spacecraft:</strong> Authority (AAS), Policy (APS), Evidence (AEP), Enforcement (AEG)</p>
+
+      <ol class="flow">
+        <li><strong>Request session</strong><span>The visitor asks the host to begin an ACCESS session.</span></li>
+        <li><strong>Trust the encounter</strong><span>The host verifies credentials and applies policy.</span></li>
+        <li><strong>Request action</strong><span>The visitor requests one protected action.</span></li>
+        <li><strong>Decide and issue</strong><span>The host issues a signed, single-use entitlement.</span></li>
+        <li><strong>Use entitlement</strong><span>The visitor presents it; the host gateway consumes it and permits the action.</span></li>
+      </ol>
+
+      <div class="outcome">
+        <strong>The decision is made onboard. No real-time ground contact required.</strong>
+        <span>Operator-defined policy / current evidence / onboard safety constraints</span>
+      </div>
+    </section>
+
+    <section id="standard" class="section" aria-labelledby="built-title">
+      <div class="proof-grid">
+        <div>
+          <p class="eyebrow">What ACCESS standardizes</p>
+          <h2 id="built-title">The contract for interoperability.</h2>
+          <ul class="checks">
+            <li>Roles, trust anchors, and authority boundaries</li>
+            <li>Schemas, canonical encoding, and credential bindings</li>
+            <li>Protocol states, sequencing, timeouts, errors, and recovery</li>
+            <li>Security profiles, version negotiation, and conformance requirements</li>
+          </ul>
+          <div class="uses" aria-label="Potential applications">
+            <span>Docking</span><span>Refueling</span><span>Capture</span><span>Servicing</span><span>Assembly</span><span>Depot access</span>
+          </div>
+        </div>
+
+        <aside class="maturity">
+          <span class="status">Standards development</span>
+          <h3>A path to an interoperable standard.</h3>
+          <p>ACCESS development combines a working protocol model with specification and interoperability work. Technical progress alone is not enough. Spacecraft operators, vehicle and infrastructure providers, integrators, mission-assurance experts, and standards organizations must help shape requirements, validate the approach, and support adoption.</p>
+        </aside>
+      </div>
+    </section>
+
+    <footer>
+      <div>
+        <p class="eyebrow">The objective</p>
+        <h2>A common trust protocol. Independent control.</h2>
+        <p>Interoperable authentication and bounded authorization, while each operator retains control of policy, safety, and enforcement.</p>
+      </div>
+      <div class="sources">
+        Grounded in NASA DSN and AMMOS mission operations; CCSDS 355.0-B-2; NASA JSC RPOD; IDSS; ISO 24330; CONFERS; NASA's 2025 ISAM State of Play; NIST SP 800-207; and published Crew Dragon, MEV, and ELSA-d mission records. Full links and claim context are in the evidence brief. Image: NASA, iss068e021233.
+      </div>
+    </footer>
+  </main>
+</body>
+</html>
