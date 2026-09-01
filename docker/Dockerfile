@@ -30,7 +30,7 @@ RUN source /opt/ros/humble/setup.bash \
     && rm -rf log
 
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["ros2", "launch", "docking_orchestration", "baseline_sim.launch.py"]
